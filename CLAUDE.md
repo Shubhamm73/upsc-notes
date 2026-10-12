@@ -2,7 +2,7 @@
 
 Offline-first study-notes PWA for one UPSC aspirant (owner's brother) on a **Samsung Galaxy Tab S8**.
 Owner: Shubham (GitHub `Shubhamm73`). Live: https://shubhamm73.github.io/upsc-notes/ (GitHub Pages via Actions on push to `main`).
-Current version: **0.7.0 (UI-2 done)**. Next: **UI-3 — review & recall** (after the UI-2 gate: a week of real notes in the canvas, nothing lost).
+Current version: **0.7.1 (UI-2 done + fix: leaving a note no longer re-saves it)**. Next: **UI-3 — review & recall** (after the UI-2 gate: a week of real notes in the canvas, nothing lost).
 
 ## Non-negotiable rules
 - **Local-only data.** Notes, words, images live in IndexedDB (Dexie) on the device. No server storage, no accounts, no login. GitHub Pages serves code only.
@@ -46,7 +46,17 @@ npx vite preview --port 4173 &      # then:
 for t in smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2; do python3 scripts/$t.py; done
 ```
 Python deps: playwright, pypdf, Pillow; `pdftotext` for the PDF test. In the cloud container pin `pip install playwright==1.56.0` (matches the pre-installed Chromium build 1194; newer pip versions look for a browser that isn't there).
-0.7.0 baseline: 7 suites, 190 checks, all passing.
+0.7.1 baseline: 7 suites, 191 checks, all passing; upgrade test 9 checks from both 0.6.0 and 0.7.0.
+
+**Upgrade test** (run it every release, and above all for any schema change): an installed previous release
+updates to this build on one browser profile, nothing lost, nothing rewritten. It starts/stops its own servers on 4173.
+```
+git worktree add /tmp/prev <previous-release-commit> && cd /tmp/prev && ln -s <repo>/node_modules . && npm run build
+cd <repo> && npm run build && python3 scripts/upgrade-test.py /tmp/prev
+```
+Stop a preview server with `fuser -k 4173/tcp`. Never `pkill -f "vite preview"`: the pattern matches the shell running it and kills that.
+The live site (shubhamm73.github.io) is on the cloud environment's allowed domains: after a deploy, run the suites against it
+by swapping `URL` to `https://shubhamm73.github.io/upsc-notes/`.
 
 ## Done so far
 M1 offline foundation · M2 rich editor (sections, lists incl. dash, tables, resizable images, charts) · M3 vocabulary · M4 PDF export (section/note/all) · v0.5 quick insights from highlights on Mark reviewed, CSAT→Interview, trash + permanent delete, unified search, inline link box · **UI-1**: day/night/system themes, subject colour system, 6 font styles (app-wide + per-note), rail/bottom-bar shell, Today screen, streak, quick capture, Ctrl+K search, More/Settings.
@@ -64,7 +74,9 @@ M1 offline foundation · M2 rich editor (sections, lists incl. dash, tables, res
 - **Focus mode**: Ctrl + . or the Focus button; Esc or "Exit focus" leaves. Esc/Ctrl+. are handled on `document` in the **capture** phase (the editor swallows Esc otherwise): one press closes a menu first, then focus mode.
 - **Search**: `noteSearchText()` adds "<Kind> callout" for every callout, so Ctrl+K "case" lists notes with Case callouts first, showing the callout text. Highlights inside callouts count as key lines / quick insights.
 - **Motion**: card → page 240 ms (WAAPI), save dot pulse → ✓ 160 ms, highlighter sweep 200 ms (overlay + a ProseMirror *decoration* hides the real mark; never mutate the editor's DOM directly, ProseMirror re-reads it and can reset the selection), Mark reviewed fly-up 300 ms, slash/popover fade + rise 4 px 120 ms. All transform/opacity, all off under reduced motion.
-- **Test gotcha**: ProseMirror reads keyboard-driven selection changes on `selectionchange`, a beat after the key. Playwright's instant Home/Arrow/End/Enter sequences race it. The smoke tests therefore select text with a DOM range (`select_text`/`mark` helpers) and move to paragraph end by range, then wait ~100–150 ms. Don't "fix" this in the app; real input is never that fast.
+- **0.7.1 fix**: `setEditable(false)` makes TipTap emit an "update" event by default, which the app took as an edit, so *leaving* any note re-saved it with a new `updatedAt` (since 0.6). Now `setEditable(false, false)`. Any code that calls editor methods must not trigger `onChange` without a real change; `smoke-test-ui2` and `upgrade-test` check `updatedAt` survives open + leave.
+- **Test gotcha**: ProseMirror reads keyboard-driven selection changes on `selectionchange`, a beat after the key. Playwright's instant Home/Arrow/End/Enter sequences race it. The smoke tests therefore select text with a DOM range (`select_text`/`mark` helpers) and move to paragraph end by range, then wait ~100–150 ms. Don't "fix" this in the app; real input is never that fast. Likewise, a selection set within ~2 ms of the last typed key is put back by the editor, so `select_text` waits 150 ms first.
+- **More test gotchas**: notes seeded with raw IndexedDB (bypassing Dexie) don't reach the live list until reload. `wait_for_selector("a, b")` waits on the *first* match, even if it's hidden.
 
 Subject colours (day/night CSS vars `--sub-*`): GS1 ochre, GS2 indigo, GS3 teal, GS4 plum, Essay graphite, Interview rose, Current affairs vermilion, PSIR forest.
 Callout colours (`--co-*`): Article blue, Case berry, Data teal, Example amber, Way forward green; PDF uses fixed day colours from `src/lib/callouts.ts`.

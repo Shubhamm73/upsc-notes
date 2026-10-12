@@ -32,6 +32,9 @@ def slash(page, query):
 
 def select_text(page, text):
     """Selects the last occurrence of `text` in the focused editor (as a finger or mouse drag would)."""
+    # The editor finishes handling the last keystroke a few ms after it; a selection made
+    # before that is put back to the caret. People can't select that fast; tests can.
+    page.wait_for_timeout(150)
     page.evaluate("""(t) => {
         const root = document.activeElement.closest('.ProseMirror');
         const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -110,6 +113,12 @@ with sync_playwright() as p:
     check(page.locator("#answer-meter").is_hidden(), "no answer meter outside the GS answer template")
     page.wait_for_timeout(1500)
     check(page.evaluate(IDB_GET, "v06-note")["updatedAt"] == 5, "opening an old note does not rewrite it")
+    page.click(".canvas-head .back-link")
+    page.wait_for_url("**/#/notes")
+    page.wait_for_timeout(1200)
+    check(page.evaluate(IDB_GET, "v06-note")["updatedAt"] == 5, "leaving a note without editing does not re-save it")
+    page.goto(URL + "#/n/v06-note")
+    page.wait_for_selector(".canvas")
     check(page.locator(".pane-list").is_hidden(), "landscape: open note is a full-page canvas")
     title_size = page.evaluate("parseFloat(getComputedStyle(document.querySelector('#f-title')).fontSize)")
     check(34 <= title_size <= 36.5, f"title is 34-36 px ({title_size})")

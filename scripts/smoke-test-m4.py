@@ -28,6 +28,9 @@ def slash(page, query):
 
 def mark(page, text):
     """Selects `text` (its last occurrence in the focused editor) and marks it from the floating toolbar."""
+    # The editor finishes handling the last keystroke a few ms after it; a selection made
+    # before that is put back to the caret. People can't select that fast; tests can.
+    page.wait_for_timeout(150)
     page.evaluate("""(t) => {
         const root = document.activeElement.closest('.ProseMirror');
         const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);

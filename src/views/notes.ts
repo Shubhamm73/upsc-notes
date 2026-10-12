@@ -186,7 +186,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   modeDue.addEventListener('click', () => setMode('due'));
   newBtn.addEventListener('click', () => {
     if (location.hash === '#/n/new') return; // already on a fresh one
-    for (const ed of editors.values()) ed.setEditable(false);
+    for (const ed of editors.values()) ed.setEditable(false, false); // false: no 'update' event, so leaving a note never re-saves it
     editorEl.replaceChildren(); // the previous note leaves at once; its unsaved text is still saved from memory
     ctx.go('#/n/new');
   });
@@ -1006,7 +1006,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     document.body.classList.toggle('editing', !!id);
     if (id && id !== 'new' && draft?.id === id) return; // already open (e.g. after the first save renamed the URL)
     // Take the old note off screen first, so nothing typed during the save lands in it.
-    for (const ed of editors.values()) ed.setEditable(false);
+    for (const ed of editors.values()) ed.setEditable(false, false); // false: no 'update' event, so leaving a note never re-saves it
     editorEl.replaceChildren();
     // Leaving a new note: its last save must not rename the address of the page we are going to.
     // (An untouched new note is never saved, so it is simply dropped.)
