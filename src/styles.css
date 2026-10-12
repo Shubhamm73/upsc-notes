@@ -33,6 +33,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg);
@@ -341,3 +342,15 @@ main { padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 24px); }
 .chart-note { color: var(--muted); font-size: 0.92rem; }
 .ProseMirror-selectednode { outline: none; }
 .ProseMirror-gapcursor:after { border-top-color: var(--fg); }
+
+/* ---------- vocabulary (M3) ---------- */
+.chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-list:empty { display: none; }
+.chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 12px; border-radius: 999px; background: var(--chip); }
+.chip-x { min-height: 32px; min-width: 32px; padding: 0; border: 0; background: transparent; font-size: 1.1rem; color: var(--muted); }
+.uses { display: grid; gap: 10px; }
+.use-row { display: grid; gap: 6px; }
+.use-meta { display: flex; gap: 8px; align-items: center; }
+.use-meta select { width: auto; }
+.dup a { margin-left: 4px; }
+#add-use { justify-self: start; }

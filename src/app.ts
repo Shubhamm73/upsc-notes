@@ -3,6 +3,7 @@ import { daysSince } from './lib/dates';
 import { h } from './lib/h';
 import { ensurePersistence, isInstalled, storageStatus } from './lib/storage';
 import { mountNotes } from './views/notes';
+import { mountVocab } from './views/vocab';
 import { mountSettings } from './views/settings';
 
 export interface View {
@@ -28,6 +29,7 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
   const statusEl = h('span', { class: 'save-status', role: 'status', 'aria-live': 'polite' });
   const installBtn = h('button', { type: 'button', class: 'install', hidden: true }, 'Install app');
   const navNotes = h('a', { href: '#/' }, 'Notes');
+  const navVocab = h('a', { href: '#/vocab' }, 'Vocabulary');
   const navSettings = h('a', { href: '#/settings' }, 'Backup & storage');
   const banners = h('div', { class: 'banners' });
   const main = h('main', { id: 'view' });
@@ -38,7 +40,7 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
       'header',
       { class: 'bar' },
       h('span', { class: 'brand' }, 'UPSC Study Notes'),
-      h('nav', { 'aria-label': 'Sections' }, navNotes, navSettings),
+      h('nav', { 'aria-label': 'Sections' }, navNotes, navVocab, navSettings),
       h('div', { class: 'bar-end' }, statusEl, installBtn)
     ),
     banners,
@@ -114,12 +116,14 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
 
   async function route() {
     const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-    const name = parts[0] === 'settings' ? 'settings' : 'notes';
+    const name = parts[0] === 'settings' ? 'settings' : parts[0] === 'vocab' || parts[0] === 'v' ? 'vocab' : 'notes';
     navNotes.setAttribute('aria-current', String(name === 'notes'));
+    navVocab.setAttribute('aria-current', String(name === 'vocab'));
     navSettings.setAttribute('aria-current', String(name === 'settings'));
     if (current?.name !== name) {
       await current?.view.destroy();
-      const view = name === 'settings' ? mountSettings(main, ctx) : mountNotes(main, ctx);
+      const view =
+        name === 'settings' ? mountSettings(main, ctx) : name === 'vocab' ? mountVocab(main, ctx) : mountNotes(main, ctx);
       current = { name, view };
       ctx.status(name === 'settings' ? '' : 'Saved on this tablet');
     }
