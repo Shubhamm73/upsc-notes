@@ -3,6 +3,7 @@ import { db, newId, type Vocab, type VocabUse } from '../db';
 import { nextReviewAfter, prettyDate, ymd } from '../lib/dates';
 import { h } from '../lib/h';
 import type { AppContext, View } from '../app';
+import { logReviewDay } from '../lib/activity';
 
 const CONTEXTS: VocabUse['context'][] = ['Essay', 'GS answer', 'Interview', 'Other'];
 type Mode = 'all' | 'due';
@@ -292,6 +293,7 @@ export function mountVocab(root: HTMLElement, ctx: AppContext): View {
     paintReview();
     const reviewBtn = h('button', { type: 'button', class: 'primary', id: 'v-reviewed' }, 'Mark reviewed');
     reviewBtn.addEventListener('click', () => {
+      void logReviewDay();
       d.reviewCount += 1;
       d.nextReview = nextReviewAfter(d.reviewCount);
       paintReview();
@@ -370,6 +372,7 @@ export function mountVocab(root: HTMLElement, ctx: AppContext): View {
 
   return {
     route(parts) {
+      if (parts[0] === 'vocab' && parts[1] === 'due') setMode('due');
       void open(parts[0] === 'v' && parts[1] ? parts[1] : null);
     },
     async flush() {

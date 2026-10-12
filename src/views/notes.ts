@@ -7,6 +7,9 @@ import { createToolbar } from '../editor/toolbar';
 import { removeUnusedImages } from '../editor/images';
 import { runPdfExport } from '../pdf/run';
 import { extractInsights, groupInsights } from '../lib/insights';
+import { logReviewDay, setLastNote } from '../lib/activity';
+import { subjectColor } from '../lib/subjects';
+import { FONT_STYLES } from '../lib/prefs';
 import { nextReviewAfter, prettyDate, ymd } from '../lib/dates';
 import { h } from '../lib/h';
 import type { AppContext, View } from '../app';
@@ -94,13 +97,19 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   root.replaceChildren(wrap);
 
   for (const s of ['All', ...SUBJECTS]) {
-    const b = h('button', { type: 'button', 'data-s': s, 'aria-pressed': String(s === 'All') }, s === 'All' ? 'All subjects' : s);
-    b.addEventListener('click', () => {
-      filter.subject = s;
-      for (const c of chips.children) c.setAttribute('aria-pressed', String((c as HTMLElement).dataset.s === s));
-      renderList();
-    });
+    const b = h(
+      'button',
+      { type: 'button', class: 'subject-chip', 'data-s': s, 'aria-pressed': String(s === 'All') },
+      s === 'All' ? null : h('span', { class: 'dot', style: `background: ${subjectColor(s)}` }),
+      s === 'All' ? 'All subjects' : s
+    );
+    b.addEventListener('click', () => setSubject(s));
     chips.append(b);
+  }
+  function setSubject(s: string) {
+    filter.subject = s;
+    for (const c of chips.children) c.setAttribute('aria-pressed', String((c as HTMLElement).dataset.s === s));
+    renderList();
   }
   search.addEventListener('input', () => {
     filter.q = search.value.trim().toLowerCase();
@@ -199,7 +208,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
             'a',
             { class: 'note-card', href: `#/n/${n.id}`, 'aria-current': draft?.id === n.id ? 'true' : undefined },
             h('strong', {}, n.title || 'Untitled note'),
-            h('span', { class: 'meta' }, [n.subject, n.topic].filter(Boolean).join(' · ')),
+            h('span', { class: 'meta' }, h('span', { class: 'dot', style: `background: ${subjectColor(n.subject)}` }), [n.subject, n.topic].filter(Boolean).join(' · ')),
             h(
               'span',
               { class: isDue ? 'meta due' : 'meta' },
@@ -418,6 +427,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     paintInsights();
 
     reviewBtn.addEventListener('click', () => {
+      void logReviewDay();
       d.reviewCount += 1;
       d.lastReviewed = Date.now();
       d.nextReview = nextReviewAfter(d.reviewCount);
@@ -442,10 +452,23 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       dirty = true;
       await save();
       ctx.toast(`Moved “${d.title || 'Untitled note'}” to Trash. Restore it from Trash if you need it.`);
-      ctx.go('#/');
+      ctx.go('#/notes');
     });
 
-    const back = h('a', { class: 'back-link', href: '#/' }, '← All notes');
+    const back = h('a', { class: 'back-link', href: '#/notes' }, '← All notes');
+    const styleSelect = h(
+      'select',
+      { id: 'note-style', class: 'style-select', 'aria-label': 'Font style for this note' },
+      h('option', { value: '' }, 'App font style'),
+      ...FONT_STYLES.map((f) => h('option', { value: f.id }, `${f.name} (this note)`))
+    );
+    styleSelect.value = d.fontStyle ?? '';
+    styleSelect.addEventListener('change', () => {
+      if (styleSelect.value) d.fontStyle = styleSelect.value;
+      else delete d.fontStyle;
+      applyNoteFont();
+      schedule();
+    });
     const notePdf = h('button', { type: 'button', id: 'note-pdf' }, 'Export note as PDF');
     notePdf.addEventListener('click', () => void runPdfExport({ kind: 'note', note: structuredClone(d) }, ctx, notePdf));
 
@@ -453,7 +476,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       h(
         'div',
         { class: 'editor' },
-        h('div', { class: 'editor-top' }, back, notePdf),
+        h('div', { class: 'editor-top' }, back, styleSelect, notePdf),
         field('Title', null, title),
         insightsHost,
         h('div', { class: 'grid2' }, field('Subject', null, subject), field('Topic', null, topic)),
@@ -464,6 +487,12 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         h('div', { class: 'danger-zone' }, trashBtn)
       )
     );
+    const editorBox = editorEl.firstElementChild as HTMLElement;
+    const applyNoteFont = () => {
+      for (const f of FONT_STYLES) editorBox.classList.remove(`font-${f.id}`);
+      if (d.fontStyle) editorBox.classList.add(`font-${d.fontStyle}`);
+    };
+    applyNoteFont();
     renderSections(d, sectionsHost);
     if (isNew) title.focus();
     renderList();
@@ -498,17 +527,23 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
           { class: 'editor-empty' },
           h('h2', {}, 'Note not found'),
           h('p', {}, "This note isn't on this tablet."),
-          h('a', { href: '#/' }, 'Back to all notes')
+          h('a', { href: '#/notes' }, 'Back to all notes')
         )
       );
       return;
     }
     renderEditor(n);
+    void setLastNote(n.id);
     ctx.status('Saved on this tablet');
   }
 
   return {
     route(parts) {
+      if (parts[0] === 'notes' && parts[1] === 'due') setMode('due');
+      if (parts[0] === 'notes' && parts[1] === 's' && parts[2]) {
+        setMode('all');
+        setSubject(decodeURIComponent(parts[2]));
+      }
       void open(parts[0] === 'n' && parts[1] ? parts[1] : null);
     },
     async flush() {

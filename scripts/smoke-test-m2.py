@@ -37,7 +37,7 @@ with sync_playwright() as p:
     ctx = browser.new_context(viewport={"width": 1280, "height": 900}, accept_downloads=True)
     page = ctx.new_page()
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(URL)
+    page.goto(URL + "#/notes")
     page.wait_for_selector("#new-note")
 
     # ---- an M1-format note opens in the rich editor unchanged ----
@@ -163,7 +163,7 @@ with sync_playwright() as p:
     check(b["counts"]["images"] == 2, "backup includes both images")
 
     # ---- removing an image frees its storage once the note is closed ----
-    page.goto(URL)
+    page.goto(URL + "#/notes")
     page.click(".note-card:has-text('Rich note test')")
     page.wait_for_function("document.querySelectorAll('.img-block img[src]').length === 2", timeout=10000)
     page.locator(".img-block img").nth(1).click()

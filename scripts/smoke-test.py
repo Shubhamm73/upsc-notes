@@ -30,7 +30,7 @@ with sync_playwright() as p:
     ctx = browser.new_context(viewport={"width": 1280, "height": 800}, accept_downloads=True)
     page = ctx.new_page()
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(URL)
+    page.goto(URL + "#/notes")
     page.wait_for_function("navigator.serviceWorker && navigator.serviceWorker.controller !== null || true")
     page.click("#new-note")
     page.fill("#f-title", "Separation of powers")
@@ -67,7 +67,7 @@ with sync_playwright() as p:
     check("today" in page.locator(".last-backup").inner_text(), "last backup shows today")
 
     # ---- offline reload (service worker) ----
-    page.goto(URL)
+    page.goto(URL + "#/notes")
     page.wait_for_function("navigator.serviceWorker.ready.then(() => true)")
     page.reload()  # make sure the page is controlled
     page.wait_for_function("!!navigator.serviceWorker.controller", timeout=10000)
@@ -88,7 +88,7 @@ with sync_playwright() as p:
     # importing again must not duplicate or overwrite
     page2.set_input_files("#import-file", str(path))
     expect(page2.locator(".import-result")).to_contain_text("0 added", timeout=5000)
-    page2.goto(URL)
+    page2.goto(URL + "#/notes")
     page2.wait_for_selector(".note-card")
     check(page2.locator(".note-card").count() == 1, "import restores the note once, no duplicates")
 
@@ -100,7 +100,7 @@ with sync_playwright() as p:
     expect(page2.locator(".import-result")).to_contain_text("isn't a UPSC Study Notes backup", timeout=5000)
 
     # portrait layout: list hidden while editing
-    page2.goto(URL)
+    page2.goto(URL + "#/notes")
     page2.click(".note-card")
     page2.wait_for_selector("#f-title")
     check(not page2.locator(".pane-list").is_visible(), "portrait: list hides while a note is open")

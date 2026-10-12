@@ -7,6 +7,11 @@ import { mountVocab } from './views/vocab';
 import { mountTrash } from './views/trash';
 import { purgeOldTrash } from './lib/trash';
 import { mountSettings } from './views/settings';
+import { mountToday } from './views/today';
+import { mountMore } from './views/more';
+import { mountAppearance } from './views/appearance';
+import { openSearch } from './views/search';
+import { icon } from './lib/icons';
 
 export interface View {
   route(parts: string[]): void;
@@ -16,6 +21,9 @@ export interface View {
 
 export interface AppContext {
   go(hash: string): void;
+  /** Opens the browser's install prompt when it is available; false if not. */
+  install(): Promise<boolean>;
+  canInstall(): boolean;
   status(text: string, isError?: boolean): void;
   toast(text: string): void;
   flush(): Promise<void>;
@@ -30,31 +38,33 @@ interface BeforeInstallPromptEvent extends Event {
 export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) => void; applyUpdate: () => void }) {
   const statusEl = h('span', { class: 'save-status', role: 'status', 'aria-live': 'polite' });
   const installBtn = h('button', { type: 'button', class: 'install', hidden: true }, 'Install app');
-  const navNotes = h('a', { href: '#/' }, 'Notes');
-  const navVocab = h('a', { href: '#/vocab' }, 'Vocabulary');
-  const navTrash = h('a', { href: '#/trash' }, 'Trash');
-  const navSettings = h('a', { href: '#/settings' }, 'Backup & storage');
+  const navItem = (href: string, label: string, ic: string) => h('a', { class: 'nav-item', href }, icon(ic), label);
+  const navToday = navItem('#/', 'Today', 'today');
+  const navNotes = navItem('#/notes', 'Notes', 'notes');
+  const navVocab = navItem('#/vocab', 'Words', 'words');
+  const navMore = navItem('#/more', 'More', 'more');
+  const searchBtn = h('button', { type: 'button', class: 'icon-btn rail-search', 'aria-label': 'Search notes and words (Ctrl K)', title: 'Search (Ctrl K)' }, icon('search'));
+  const searchTop = h('button', { type: 'button', class: 'icon-btn search-top', 'aria-label': 'Search notes and words' }, icon('search'));
+  const newBtn = h('button', { type: 'button', class: 'rail-new', 'aria-label': 'New note (Ctrl N)', title: 'New note (Ctrl N)' }, icon('plus', 24));
   const banners = h('div', { class: 'banners' });
   const main = h('main', { id: 'view' });
   const toastEl = h('div', { class: 'toast', role: 'status', 'aria-live': 'polite', hidden: true });
 
   root.replaceChildren(
     h(
-      'header',
-      { class: 'bar' },
-      h('span', { class: 'brand' }, 'UPSC Study Notes'),
-      h('nav', { 'aria-label': 'Sections' }, navNotes, navVocab, navTrash, navSettings),
-      h('div', { class: 'bar-end' }, statusEl, installBtn)
+      'div',
+      { class: 'app' },
+      h('nav', { class: 'rail', 'aria-label': 'Main' }, searchBtn, h('div', { style: 'height: 8px' }), navToday, navNotes, navVocab, navMore, h('div', { class: 'spacer' }), newBtn),
+      h('div', { class: 'content' }, h('div', { class: 'topline' }, statusEl, installBtn, searchTop), banners, main)
     ),
-    banners,
-    main,
     toastEl
   );
 
-  // Sticky toolbars sit just under the top bar, whatever its height on this screen.
-  const header = root.querySelector('header')!;
+  // Sticky toolbars sit just under the top line, whatever its height on this screen.
+  const header = root.querySelector('.topline') as HTMLElement;
   new ResizeObserver(() => document.documentElement.style.setProperty('--bar-h', `${header.offsetHeight}px`)).observe(header);
 
+  let deferredInstall: BeforeInstallPromptEvent | null = null;
   let toastTimer: number | undefined;
   let updateReady = false;
   let current: { name: string; view: View } | null = null;
@@ -76,7 +86,13 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
     flush: async () => {
       await current?.view.flush();
     },
-    refreshBanners: () => void paintBanners()
+    refreshBanners: () => void paintBanners(),
+    install: async () => {
+      if (!deferredInstall) return false;
+      installBtn.click();
+      return true;
+    },
+    canInstall: () => !!deferredInstall
   };
 
   async function paintBanners() {
@@ -119,24 +135,37 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
 
   async function route() {
     const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+    const p0 = parts[0] ?? '';
     const name =
-      parts[0] === 'settings' ? 'settings' : parts[0] === 'trash' ? 'trash' : parts[0] === 'vocab' || parts[0] === 'v' ? 'vocab' : 'notes';
-    navNotes.setAttribute('aria-current', String(name === 'notes'));
-    navVocab.setAttribute('aria-current', String(name === 'vocab'));
-    navTrash.setAttribute('aria-current', String(name === 'trash'));
-    navSettings.setAttribute('aria-current', String(name === 'settings'));
+      p0 === '' || p0 === 'today'
+        ? 'today'
+        : p0 === 'notes' || p0 === 'n'
+          ? 'notes'
+          : p0 === 'vocab' || p0 === 'v'
+            ? 'vocab'
+            : ['settings', 'trash', 'more', 'prefs'].includes(p0)
+              ? p0
+              : 'today';
+    const section = name === 'settings' || name === 'trash' || name === 'prefs' ? 'more' : name;
+    navToday.setAttribute('aria-current', String(section === 'today'));
+    navNotes.setAttribute('aria-current', String(section === 'notes'));
+    navVocab.setAttribute('aria-current', String(section === 'vocab'));
+    navMore.setAttribute('aria-current', String(section === 'more'));
     if (current?.name !== name) {
       await current?.view.destroy();
-      const view =
-        name === 'settings'
-          ? mountSettings(main, ctx)
-          : name === 'trash'
-            ? mountTrash(main, ctx)
-            : name === 'vocab'
-              ? mountVocab(main, ctx)
-              : mountNotes(main, ctx);
+      const mounts: Record<string, (r: HTMLElement, c: AppContext) => View> = {
+        today: mountToday,
+        notes: mountNotes,
+        vocab: mountVocab,
+        settings: mountSettings,
+        trash: mountTrash,
+        more: mountMore,
+        prefs: mountAppearance
+      };
+      const view = mounts[name](main, ctx);
       current = { name, view };
-      ctx.status(name === 'settings' || name === 'trash' ? '' : 'Saved on this tablet');
+      ctx.status(name === 'notes' || name === 'vocab' ? 'Saved on this tablet' : '');
+      window.scrollTo(0, 0);
     }
     current.view.route(parts);
     void paintBanners();
@@ -148,7 +177,6 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
   });
   window.addEventListener('pagehide', () => void ctx.flush());
 
-  let deferredInstall: BeforeInstallPromptEvent | null = null;
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredInstall = e as BeforeInstallPromptEvent;
@@ -174,6 +202,22 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
   opts.onUpdate(() => {
     updateReady = true;
     void paintBanners();
+  });
+
+  searchBtn.addEventListener('click', () => openSearch(ctx));
+  searchTop.addEventListener('click', () => openSearch(ctx));
+  newBtn.addEventListener('click', () => ctx.go('#/n/new'));
+  // Keyboard cover shortcuts: Ctrl+K search, Ctrl+N new note.
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === 'k') {
+      e.preventDefault();
+      openSearch(ctx);
+    } else if (k === 'n' && !e.shiftKey) {
+      e.preventDefault();
+      ctx.go('#/n/new');
+    }
   });
 
   window.addEventListener('hashchange', () => void route());

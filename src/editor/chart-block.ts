@@ -308,6 +308,7 @@ export const ChartBlock = Node.create({
       const media = window.matchMedia('(prefers-color-scheme: dark)');
       const onTheme = () => draw(readChart(current.attrs));
       media.addEventListener('change', onTheme);
+      window.addEventListener('themechange', onTheme);
       // Draw after the node is in the document so the canvas has a size.
       requestAnimationFrame(() => draw(readChart(current.attrs)));
 
@@ -334,6 +335,7 @@ export const ChartBlock = Node.create({
         },
         destroy() {
           media.removeEventListener('change', onTheme);
+          window.removeEventListener('themechange', onTheme);
           chart?.destroy();
         }
       };
