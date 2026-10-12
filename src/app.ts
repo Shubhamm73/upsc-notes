@@ -10,6 +10,7 @@ import { mountSettings } from './views/settings';
 import { mountToday } from './views/today';
 import { mountMore } from './views/more';
 import { mountAppearance } from './views/appearance';
+import { mountReview } from './views/review';
 import { openSearch } from './views/search';
 import { icon } from './lib/icons';
 
@@ -143,10 +144,10 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
           ? 'notes'
           : p0 === 'vocab' || p0 === 'v'
             ? 'vocab'
-            : ['settings', 'trash', 'more', 'prefs'].includes(p0)
+            : ['settings', 'trash', 'more', 'prefs', 'review'].includes(p0)
               ? p0
               : 'today';
-    const section = name === 'settings' || name === 'trash' || name === 'prefs' ? 'more' : name;
+    const section = name === 'settings' || name === 'trash' || name === 'prefs' ? 'more' : name === 'review' ? 'today' : name;
     navToday.setAttribute('aria-current', String(section === 'today'));
     navNotes.setAttribute('aria-current', String(section === 'notes'));
     navVocab.setAttribute('aria-current', String(section === 'vocab'));
@@ -160,7 +161,8 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
         settings: mountSettings,
         trash: mountTrash,
         more: mountMore,
-        prefs: mountAppearance
+        prefs: mountAppearance,
+        review: mountReview
       };
       const view = mounts[name](main, ctx);
       current = { name, view };

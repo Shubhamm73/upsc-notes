@@ -100,9 +100,12 @@ export function createEditor(opts: {
   onBlur?: (editor: Editor) => void;
   slash?: SlashHook;
   placeholder?: string;
+  /** false = read-only (the review session's whole-note card). */
+  editable?: boolean;
 }): Editor {
   return new Editor({
     element: opts.element,
+    editable: opts.editable ?? true,
     content: opts.content as object,
     extensions: [
       StarterKit.configure({

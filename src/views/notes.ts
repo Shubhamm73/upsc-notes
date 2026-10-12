@@ -7,12 +7,13 @@ import { createCanvasTools, reducedMotion } from '../editor/tools';
 import { removeUnusedImages } from '../editor/images';
 import { runPdfExport } from '../pdf/run';
 import { extractInsights, groupInsights, sectionKeyLines } from '../lib/insights';
-import { logReviewDay, setLastNote } from '../lib/activity';
+import { logReviewDay, milestoneText, setLastNote } from '../lib/activity';
+import { reviewNote } from '../lib/review';
 import { subjectColor } from '../lib/subjects';
-import { FONT_STYLES } from '../lib/prefs';
+import { celebrationsOn, FONT_STYLES } from '../lib/prefs';
 import { TEMPLATES, templateOf } from '../lib/templates';
 import { closePopover, openPopover, type MenuItem } from '../lib/menu';
-import { nextReviewAfter, prettyDate, ymd } from '../lib/dates';
+import { prettyDate, ymd } from '../lib/dates';
 import { h } from '../lib/h';
 import { icon } from '../lib/icons';
 import type { AppContext, View } from '../app';
@@ -922,7 +923,8 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         ? `Reviewed ${d.reviewCount} ${d.reviewCount === 1 ? 'time' : 'times'}. Next review ${prettyDate(d.nextReview)}.`
         : 'Not reviewed yet. Mark it once you can explain it without looking.';
     };
-    reviewBtn.addEventListener('click', () => {
+    // Mark reviewed = Easy in a review session: the same single transaction (lib/review.ts reviewNote).
+    const markReviewed = async () => {
       // Remember where the highlighted lines are on screen, so they can fly up into Quick insights.
       const sources = reducedMotion()
         ? []
@@ -930,23 +932,36 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
             .map((m) => ({ text: (m.textContent ?? '').trim(), rect: m.getBoundingClientRect() }))
             .filter((s) => s.text && s.rect.bottom > 0 && s.rect.top < window.innerHeight)
             .slice(0, 10);
-      void logReviewDay();
-      d.reviewCount += 1;
-      d.lastReviewed = Date.now();
-      d.nextReview = nextReviewAfter(d.reviewCount);
-      const ins = extractInsights(d);
-      if (ins.items.length) d.insights = ins;
-      else delete d.insights;
+      reviewBtn.disabled = true;
+      try {
+        dirty = true; // store what is on screen first: the review reads the stored note
+        await save();
+        if (dirty) throw new Error('not saved');
+        const { note } = await reviewNote(d.id, 'easy');
+        d.reviewCount = note.reviewCount;
+        d.reviewStep = note.reviewStep;
+        d.nextReview = note.nextReview;
+        d.lastReviewed = note.lastReviewed;
+        d.updatedAt = note.updatedAt;
+        if (note.insights) d.insights = note.insights;
+        else delete d.insights;
+      } catch {
+        ctx.toast("Couldn't mark it reviewed. Nothing was changed, so you can try again.");
+        return;
+      } finally {
+        reviewBtn.disabled = false;
+      }
+      const count = d.insights?.items.length ?? 0;
       paintReview();
       paintInsights(true);
-      dirty = true;
-      void save();
-      ctx.toast(
-        ins.items.length
-          ? `Next review ${prettyDate(d.nextReview)}. ${plural(ins.items.length, 'quick insight')} added at the top.`
-          : `Next review ${prettyDate(d.nextReview)}. Highlight key lines with Mark to get quick insights.`
-      );
-      if (!ins.items.length) return;
+      const text = count
+        ? `Next review ${prettyDate(d.nextReview)}. ${plural(count, 'quick insight')} added at the top and to your review cards.`
+        : `Next review ${prettyDate(d.nextReview)}. Highlight key lines with Mark to get quick insights.`;
+      ctx.toast(text);
+      void logReviewDay().then((day) => {
+        if (day.milestone && celebrationsOn()) ctx.toast(`${text} ${milestoneText(day.milestone)}`);
+      });
+      if (!count) return;
       const target = insightsHost.getBoundingClientRect();
       for (const s of sources) {
         const fly = h('div', { class: 'flyer', 'aria-hidden': 'true', style: `left:${s.rect.left}px;top:${s.rect.top}px;max-width:${Math.max(80, Math.min(s.rect.width, 420))}px` }, s.text);
@@ -964,7 +979,8 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
           .finished.finally(() => fly.remove());
       }
       window.setTimeout(() => insightsHost.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'center' }), sources.length ? 300 : 0);
-    });
+    };
+    reviewBtn.addEventListener('click', () => void markReviewed());
 
     canvas = {
       setSave,

@@ -1,5 +1,6 @@
 import { db, getMeta } from '../db';
 import { collectImageIds, removeUnusedImages } from '../editor/images';
+import { deleteCardsOf } from './review';
 
 export type TrashKind = 'note' | 'word';
 export const TRASH_DAYS_DEFAULT = 30;
@@ -31,9 +32,13 @@ export async function imageCountFor(noteId: string): Promise<number> {
 
 /** Removes an item for good, plus any images nothing else uses. Cannot be undone. */
 export async function deleteForever(kind: TrashKind, id: string) {
-  if (kind === 'note') await db.notes.delete(id);
-  else await db.vocab.delete(id);
-  if (kind === 'note') await removeUnusedImages();
+  if (kind === 'note') {
+    await db.transaction('rw', db.notes, db.cards, async () => {
+      await db.notes.delete(id);
+      await deleteCardsOf([id]);
+    });
+    await removeUnusedImages();
+  } else await db.vocab.delete(id);
 }
 
 export async function emptyTrash(): Promise<number> {
@@ -41,9 +46,10 @@ export async function emptyTrash(): Promise<number> {
     db.notes.filter((n) => !!n.deletedAt).primaryKeys(),
     db.vocab.filter((w) => !!w.deletedAt).primaryKeys()
   ]);
-  await db.transaction('rw', db.notes, db.vocab, async () => {
+  await db.transaction('rw', db.notes, db.vocab, db.cards, async () => {
     await db.notes.bulkDelete(notes);
     await db.vocab.bulkDelete(words);
+    await deleteCardsOf(notes);
   });
   if (notes.length) await removeUnusedImages();
   return notes.length + words.length;
@@ -59,8 +65,11 @@ export async function purgeOldTrash(): Promise<number> {
     db.vocab.filter((w) => !!w.deletedAt && w.deletedAt < cutoff).primaryKeys()
   ]);
   if (!notes.length && !words.length) return 0;
-  await db.notes.bulkDelete(notes);
-  await db.vocab.bulkDelete(words);
+  await db.transaction('rw', db.notes, db.vocab, db.cards, async () => {
+    await db.notes.bulkDelete(notes);
+    await db.vocab.bulkDelete(words);
+    await deleteCardsOf(notes);
+  });
   if (notes.length) await removeUnusedImages();
   return notes.length + words.length;
 }

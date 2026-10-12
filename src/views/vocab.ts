@@ -1,9 +1,11 @@
 import { liveQuery, type Subscription } from 'dexie';
 import { db, newId, type Vocab, type VocabUse } from '../db';
-import { nextReviewAfter, prettyDate, ymd } from '../lib/dates';
+import { prettyDate, ymd } from '../lib/dates';
+import { rateRecord } from '../lib/schedule';
+import { celebrationsOn } from '../lib/prefs';
 import { h } from '../lib/h';
 import type { AppContext, View } from '../app';
-import { logReviewDay } from '../lib/activity';
+import { logReviewDay, milestoneText } from '../lib/activity';
 
 const CONTEXTS: VocabUse['context'][] = ['Essay', 'GS answer', 'Interview', 'Other'];
 type Mode = 'all' | 'due';
@@ -293,13 +295,14 @@ export function mountVocab(root: HTMLElement, ctx: AppContext): View {
     paintReview();
     const reviewBtn = h('button', { type: 'button', class: 'primary', id: 'v-reviewed' }, 'Mark reviewed');
     reviewBtn.addEventListener('click', () => {
-      void logReviewDay();
-      d.reviewCount += 1;
-      d.nextReview = nextReviewAfter(d.reviewCount);
+      rateRecord(d, 'easy'); // the same as Easy in a review session
       paintReview();
       dirty = true;
       void save();
       ctx.toast(`Next review ${prettyDate(d.nextReview)}`);
+      void logReviewDay().then((day) => {
+        if (day.milestone && celebrationsOn()) ctx.toast(`Next review ${prettyDate(d.nextReview)}. ${milestoneText(day.milestone)}`);
+      });
     });
 
     const trashBtn = h('button', { type: 'button', class: 'danger-outline', id: 'word-trash' }, 'Move to trash');

@@ -35,16 +35,17 @@ with sync_playwright() as p:
     page.select_option("#capture-subject", "GS3")
     page.click("#capture-save")
     expect(page.locator(".today-title")).to_contain_text("1 thing is due", timeout=5000)
-    check(page.locator("#start-review").get_attribute("href").startswith("#/n/"), "Start review opens the first due note")
+    check(page.locator("#start-review").get_attribute("href") == "#/review", "Start review opens the review session (0.8)")
     check("RBI kept the repo rate" in page.locator(".continue-title").inner_text(), "Continue writing shows the captured note")
     check("Start a streak" in page.locator(".streak").inner_text(), "no streak before any review")
 
     # ---- review builds the streak and a ring ----
     page.click("#start-review")
-    page.wait_for_selector("#mark-reviewed")
-    page.click("#mark-reviewed")
-    page.wait_for_timeout(600)
-    page.click(".nav-item:has-text('Today')")
+    page.wait_for_selector("#rv-show")
+    check("RBI kept the repo rate" in page.locator("#rv-card").inner_text(), "the session starts with the due note")
+    page.click("#rv-show")
+    page.click("#rate-easy")  # Easy on a note = Mark reviewed
+    page.click("#rv-done")
     page.wait_for_selector(".today-title")
     expect(page.locator(".streak")).to_contain_text("1-day streak", timeout=5000)
     check("all caught up" in page.locator(".today-title").inner_text(), "Today shows caught up after review")

@@ -155,7 +155,7 @@ export function mountSettings(root: HTMLElement, ctx: AppContext): View {
     importResult.textContent = 'Importing…';
     try {
       const r = await importBackup(file);
-      importResult.textContent = `Imported: ${r.added} added, ${r.updated} updated, ${r.keptNewer} already newer here, ${r.images} images.`;
+      importResult.textContent = `Imported: ${r.added} added, ${r.updated} updated, ${r.keptNewer} already newer here, ${r.images} images, ${r.cards} review cards.`;
       ctx.toast('Import finished.');
     } catch (e) {
       importResult.textContent =

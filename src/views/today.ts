@@ -1,5 +1,7 @@
 import { liveQuery } from 'dexie';
-import { db, newId, SUBJECTS, type Note, type Vocab } from '../db';
+import { db, newId, SUBJECTS, type Note, type ReviewCard, type Vocab } from '../db';
+import { buildSession, dueItems, minutesFor, type QueueItem } from '../lib/review';
+import { ringValue, subjectRing } from '../lib/rings';
 import { currentStreak, getLastNote } from '../lib/activity';
 import { ymd } from '../lib/dates';
 import { textToDoc } from '../lib/doc';
@@ -7,9 +9,6 @@ import { h } from '../lib/h';
 import { icon } from '../lib/icons';
 import { subjectColor } from '../lib/subjects';
 import type { AppContext, View } from '../app';
-
-const RING_R = 24;
-const RING_C = 2 * Math.PI * RING_R;
 
 function greeting(d = new Date()) {
   const hr = d.getHours();
@@ -24,28 +23,6 @@ function ago(ts: number) {
   if (hrs < 24) return `${hrs} ${hrs === 1 ? 'hour' : 'hours'} ago`;
   const days = Math.round(hrs / 24);
   return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-}
-
-function ring(name: string, value: number | null): HTMLElement {
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('width', '64');
-  svg.setAttribute('height', '64');
-  svg.setAttribute('viewBox', '0 0 64 64');
-  svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', value === null ? `${name}: no notes yet` : `${name}: ${value} percent on schedule`);
-  const track = document.createElementNS(svgNS, 'circle');
-  Object.entries({ cx: '32', cy: '32', r: String(RING_R), fill: 'none', stroke: 'var(--chip)', 'stroke-width': '7' }).forEach(([k, v]) => track.setAttribute(k, v));
-  const arc = document.createElementNS(svgNS, 'circle');
-  Object.entries({
-    cx: '32', cy: '32', r: String(RING_R), fill: 'none', stroke: subjectColor(name), 'stroke-width': '7', 'stroke-linecap': 'round',
-    'stroke-dasharray': `${((value ?? 0) / 100) * RING_C} ${RING_C}`, transform: 'rotate(-90 32 32)', class: 'ring-arc'
-  }).forEach(([k, v]) => arc.setAttribute(k, v));
-  const label = document.createElementNS(svgNS, 'text');
-  Object.entries({ x: '32', y: '37', 'text-anchor': 'middle', 'font-size': '14', 'font-weight': '700', fill: 'var(--fg)' }).forEach(([k, v]) => label.setAttribute(k, v));
-  label.textContent = value === null ? '–' : `${value}%`;
-  svg.append(track, ...(value ? [arc] : []), label);
-  return h('a', { class: 'ring', href: `#/notes/s/${encodeURIComponent(name)}` }, svg, h('span', {}, name));
 }
 
 export function mountToday(root: HTMLElement, ctx: AppContext): View {
@@ -127,14 +104,20 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
   const now = new Date();
   dateEl.textContent = now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 
-  async function paint(notes: Note[], words: Vocab[]) {
+  const firstLabel = (it: QueueItem) =>
+    it.type === 'insight'
+      ? `a key line from ${it.note.title || 'Untitled note'}`
+      : it.type === 'word'
+        ? `the word “${it.word.word || 'Untitled word'}”`
+        : it.note.title || 'Untitled note';
+
+  async function paint(notes: Note[], words: Vocab[], cards: ReviewCard[]) {
     const today = ymd();
     const liveNotes = notes.filter((n) => !n.deletedAt);
-    const liveWords = words.filter((w) => !w.deletedAt);
-    const dueNotes = liveNotes.filter((n) => n.nextReview <= today).sort((a, b) => a.nextReview.localeCompare(b.nextReview));
-    const dueWords = liveWords.filter((w) => w.nextReview <= today);
-    const total = dueNotes.length + dueWords.length;
-    const minutes = Math.max(1, Math.ceil(dueNotes.length * 2 + dueWords.length * 0.5));
+    const due = dueItems(notes, words, cards, today);
+    const count = (t: QueueItem['type']) => due.filter((i) => i.type === t).length;
+    const [dueInsights, dueWords, dueNotes] = [count('insight'), count('word'), count('note')];
+    const total = due.length;
 
     headline.textContent = !liveNotes.length
       ? `${greeting(now)}. Let's write your first note.`
@@ -149,25 +132,23 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
     );
     streakEl.classList.toggle('lit', streak.days > 0);
 
-    // Due card
+    // Due card: one queue of key lines, words and notes; chips start a session of one kind.
     if (total) {
+      const chip = (n: number, one: string, many: string, href: string, id: string) =>
+        n ? h('a', { class: 'due-chip', href, id }, h('strong', {}, String(n)), ` ${n === 1 ? one : many}`) : null;
       const chips = h(
         'div',
         { class: 'due-chips' },
-        dueNotes.length ? h('a', { class: 'due-chip', href: '#/notes/due' }, h('strong', {}, String(dueNotes.length)), dueNotes.length === 1 ? ' note' : ' notes') : null,
-        dueWords.length ? h('a', { class: 'due-chip', href: '#/vocab/due' }, h('strong', {}, String(dueWords.length)), dueWords.length === 1 ? ' word' : ' words') : null
+        chip(dueInsights, 'key line', 'key lines', '#/review/insights', 'due-insights'),
+        chip(dueWords, 'word', 'words', '#/review/words', 'due-words'),
+        chip(dueNotes, 'note', 'notes', '#/review/notes', 'due-notes')
       );
-      const first = dueNotes[0];
-      const start = h(
-        'a',
-        { class: 'start-review', id: 'start-review', href: first ? `#/n/${first.id}` : '#/vocab/due' },
-        first ? 'Start review' : 'Review words',
-        icon('arrow', 20)
-      );
+      const first = buildSession(due).queue[0];
+      const start = h('a', { class: 'start-review', id: 'start-review', href: '#/review' }, 'Start review', icon('arrow', 20));
       dueHost.replaceChildren(
-        h('div', { class: 'panel-head' }, h('h2', {}, 'Due today'), h('span', {}, `about ${minutes} min`)),
+        h('div', { class: 'panel-head' }, h('h2', {}, 'Due today'), h('span', { id: 'due-summary' }, `${total} ${total === 1 ? 'item' : 'items'} · about ${minutesFor(due)} min`)),
         chips,
-        ...(first ? [h('p', { class: 'due-next' }, `Starts with ${first.title || 'Untitled note'}.`)] : []),
+        h('p', { class: 'due-next' }, `Starts with ${firstLabel(first)}.`),
         start
       );
     } else {
@@ -208,18 +189,11 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
     }
 
     // Subject rings: share of a subject's notes that are reviewed and not overdue
-    ringsHost.replaceChildren(
-      ...SUBJECTS.map((s) => {
-        const list = liveNotes.filter((n) => n.subject === s);
-        if (!list.length) return ring(s, null);
-        const ok = list.filter((n) => n.reviewCount > 0 && n.nextReview >= today).length;
-        return ring(s, Math.round((ok / list.length) * 100));
-      })
-    );
+    ringsHost.replaceChildren(...SUBJECTS.map((s) => subjectRing(s, ringValue(liveNotes, s, today), { href: `#/notes/s/${encodeURIComponent(s)}` })));
   }
 
-  const sub = liveQuery(() => Promise.all([db.notes.toArray(), db.vocab.toArray()])).subscribe({
-    next: ([n, w]) => void paint(n, w),
+  const sub = liveQuery(() => Promise.all([db.notes.toArray(), db.vocab.toArray(), db.cards.where('due').belowOrEqual(ymd()).toArray()])).subscribe({
+    next: ([n, w, c]) => void paint(n, w, c),
     error: () => ctx.toast("Couldn't read your notes. Reload the app.")
   });
 

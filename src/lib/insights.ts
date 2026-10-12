@@ -25,7 +25,12 @@ export function extractInsights(note: Note): NoteInsights {
  * Highlights inside callouts, lists and tables count too: every text block is visited.
  */
 export function sectionKeyLines(doc: DocNode): string[] {
-  const out: string[] = [];
+  return keyLineDetails(doc).map((d) => d.text);
+}
+
+/** Each key line with the rest of its paragraph (`before` / `after`), used for the blanked-out review prompt. */
+export function keyLineDetails(doc: DocNode): { text: string; before: string; after: string }[] {
+  const out: { text: string; before: string; after: string }[] = [];
   const seen = new Set<string>();
   const walk = (n: DocNode) => {
     const kids = n.content ?? [];
@@ -34,18 +39,26 @@ export function sectionKeyLines(doc: DocNode): string[] {
       kids.forEach(walk);
       return;
     }
+    const plain = kids.map((k) => (k.type === 'text' ? k.text ?? '' : ' ')).join('');
+    let pos = 0;
     let run = '';
+    let start = 0;
     const flush = () => {
       const text = run.replace(/\s+/g, ' ').trim();
+      const end = start + run.length;
       run = '';
       if (!text || seen.has(text.toLowerCase())) return;
       seen.add(text.toLowerCase());
-      out.push(text);
+      out.push({ text, before: plain.slice(0, start).replace(/\s+/g, ' '), after: plain.slice(end).replace(/\s+/g, ' ') });
     };
     for (const k of kids) {
+      const piece = k.type === 'text' ? k.text ?? '' : ' ';
       const marked = k.type === 'text' && (k.marks ?? []).some((m) => m.type === 'highlight');
-      if (marked) run += k.text ?? '';
-      else flush();
+      if (marked) {
+        if (!run) start = pos;
+        run += piece;
+      } else flush();
+      pos += piece.length;
     }
     flush();
   };

@@ -1,5 +1,5 @@
 import { h } from '../lib/h';
-import { FONT_STYLES, getFontStyle, getTheme, setFontStyle, setTheme, type ThemePref } from '../lib/prefs';
+import { celebrationsOn, FONT_STYLES, getFontStyle, getTheme, setCelebrations, setFontStyle, setTheme, type ThemePref } from '../lib/prefs';
 import type { AppContext, View } from '../app';
 
 export function mountAppearance(root: HTMLElement, ctx: AppContext): View {
@@ -48,6 +48,12 @@ export function mountAppearance(root: HTMLElement, ctx: AppContext): View {
   };
   paintFonts();
 
+  const celebrate = h('input', { type: 'checkbox', id: 'pref-celebrate', checked: celebrationsOn() });
+  celebrate.addEventListener('change', () => {
+    setCelebrations(celebrate.checked);
+    ctx.toast(celebrate.checked ? 'Streak moments are on.' : 'Streak moments are off. The streak still counts.');
+  });
+
   root.replaceChildren(
     h(
       'div',
@@ -60,6 +66,13 @@ export function mountAppearance(root: HTMLElement, ctx: AppContext): View {
         h('h2', {}, 'Note font style'),
         h('p', { class: 'meta' }, 'Used across the app. One note can use a different style, set from inside the note. PDFs keep their own print font.'),
         fontGrid
+      ),
+      h(
+        'section',
+        { class: 'card-block' },
+        h('h2', {}, 'Review'),
+        h('label', { class: 'check', for: 'pref-celebrate' }, celebrate, 'Streak moments at 7, 30 and 100 days'),
+        h('p', { class: 'meta' }, 'A quiet line in the session summary when your streak reaches one of these. No sounds, no pop-ups.')
       )
     )
   );

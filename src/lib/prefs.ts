@@ -27,6 +27,7 @@ export const FONT_STYLES: FontStyle[] = [
 
 const KEY_THEME = 'upsc.theme';
 const KEY_FONT = 'upsc.font';
+const KEY_CELEBRATE = 'upsc.celebrate';
 
 function read(key: string): string | null {
   try {
@@ -82,3 +83,12 @@ export function setFontStyle(id: string) {
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   if (getTheme() === 'system') applyAppearance();
 });
+
+/** Quiet streak moments at 7, 30 and 100 days (Settings → Appearance). On unless switched off. */
+export function celebrationsOn(): boolean {
+  return read(KEY_CELEBRATE) !== 'off';
+}
+
+export function setCelebrations(on: boolean) {
+  write(KEY_CELEBRATE, on ? 'on' : 'off');
+}
