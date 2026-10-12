@@ -2,7 +2,7 @@
 
 Offline-first study-notes PWA for one UPSC aspirant (owner's brother) on a **Samsung Galaxy Tab S8**.
 Owner: Shubham (GitHub `Shubhamm73`). Live: https://shubhamm73.github.io/upsc-notes/ (GitHub Pages via Actions on push to `main`).
-Current version: **0.8.0 (UI-3 done: review & recall)**. Next: **UI-4 — S Pen & finishing** (after the UI-3 gate: a week of real review sessions on the tablet, nothing lost).
+Current version: **0.8.1 (UI-3 done: review & recall; backup/install reminders moved off the home screen)**. Next: **UI-4 — S Pen & finishing** (after the UI-3 gate: a week of real review sessions on the tablet, nothing lost).
 
 ## Non-negotiable rules
 - **Local-only data.** Notes, words, images live in IndexedDB (Dexie) on the device. No server storage, no accounts, no login. GitHub Pages serves code only.
@@ -48,7 +48,7 @@ npx vite preview --port 4173 &      # then:
 for t in smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2 smoke-test-ui3; do python3 scripts/$t.py; done
 ```
 Python deps: playwright, pypdf, Pillow; `pdftotext` for the PDF test. In the cloud container pin `pip install playwright==1.56.0` (matches the pre-installed Chromium build 1194; newer pip versions look for a browser that isn't there).
-0.8.0 baseline: 8 suites, 297 checks, all passing; upgrade test 31 checks from 0.7.1 (09379bc): v2 → v3 keeps every note, word, image, quick insight and setting byte-for-byte, and a 0.7.1 backup imports intact (fresh and upgraded tablet, no duplicate cards).
+0.8.1 baseline: 8 suites, 300 checks, all passing; upgrade test 31 checks from 0.7.1 (09379bc) and from 0.8.0 (144da24): v2 → v3 keeps every note, word, image, quick insight and setting byte-for-byte, and a 0.7.1 backup imports intact (fresh and upgraded tablet, no duplicate cards).
 
 **Upgrade test** (run it every release, and above all for any schema change): an installed previous release
 updates to this build on one browser profile, nothing lost, nothing rewritten. It starts/stops its own servers on 4173.
@@ -64,6 +64,8 @@ by swapping `URL` to `https://shubhamm73.github.io/upsc-notes/`.
 M1 offline foundation · M2 rich editor (sections, lists incl. dash, tables, resizable images, charts) · M3 vocabulary · M4 PDF export (section/note/all) · v0.5 quick insights from highlights on Mark reviewed, CSAT→Interview, trash + permanent delete, unified search, inline link box · **UI-1**: day/night/system themes, subject colour system, 6 font styles (app-wide + per-note), rail/bottom-bar shell, Today screen, streak, quick capture, Ctrl+K search, More/Settings.
 
 **UI-2 (0.7.0)**: full-page writing canvas, templates, slash menu, floating toolbar, touch bar, focus mode, UPSC callouts, outline rail, GS answer meter, live key-line count, UI-2 motion. Details below.
+
+**0.8.1**: the owner asked for no warning banners over the home screen. The backup and install reminders now live only in More (the Backup & storage row turns into "No backup yet. Back up now." / "Last backup N days ago." in warning colour once there are notes and no backup for > 7 days) and in Backup & storage ("Last backup: never." in warning colour, Install section). The only app-wide banner left is "A new version is ready → Reload now": keep it, it's how updates reach the tablet (`registerType: 'prompt'`).
 
 **UI-3 (0.8.0)**: review cards for quick insights (Dexie v3), one Today queue, full-screen review session (insight / word / whole-note cards, Again / Hard / Easy, swipes, keys, undo, summary with rings), streak moments at 7/30/100 with a Settings switch, backup format 2. Details below.
 
@@ -143,4 +145,5 @@ Open note: card expands to page 240 ms · Save: dot pulse then ✓ 160 ms · Hig
 - Subject rings count notes only (reviewed and not overdue), so insight and word cards don't move them; the summary rings only change when a note card is rated.
 - Rating a note (or Mark reviewed) changes its `updatedAt`, so Today's "Continue writing" may show it as "Edited just now" when no note was opened since.
 - Highlight is an inclusive mark: typing right after a highlighted run continues the highlight (unmark with the toolbar or Ctrl+Shift+H).
+- Backup is a file, not an account link: Save to Downloads, or Share → the Android share sheet → Google Drive (the Drive app uses whatever Google account is signed in on the tablet). There is no automatic sync and no Google sign-in in the app (local-only rule). A direct "Back up to my Drive" button would need Google sign-in (Google Identity Services + Drive API `drive.file` scope, a Google Cloud OAuth client owned by the owner); not built, owner to decide.
 - `git remote` may print "repository moved" — canonical URL is https://github.com/Shubhamm73/upsc-notes.git.

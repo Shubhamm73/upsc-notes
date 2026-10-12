@@ -56,10 +56,16 @@ with sync_playwright() as p:
     page.wait_for_timeout(300)
     check("Next review" in page.locator(".review-info").inner_text(), "mark reviewed schedules next review")
 
-    # backup reminder banner present before first backup
-    check(page.locator(".banner.warn").count() >= 1, "backup reminder shows when no backup exists")
-
+    # backup reminder: not a banner over the screens (0.8.1), but in More and in Backup & storage
+    page.goto(URL + "#/")
+    page.wait_for_selector(".today-title")
+    check(page.locator(".banner.warn").count() == 0, "no backup or install banner on the home screen")
+    page.goto(URL + "#/more")
+    expect(page.locator("#more-backup")).to_have_text("No backup yet. Back up now.", timeout=5000)
+    check("warn" in page.get_attribute("#more-backup", "class"), "More → Backup & storage reminds when no backup exists")
     page.goto(URL + "#/settings")
+    expect(page.locator(".last-backup")).to_have_text("Last backup: never.", timeout=5000)
+    check("warn" in page.get_attribute(".last-backup", "class"), "Backup & storage shows the missing backup as a warning")
     with page.expect_download() as dl:
         page.click("#backup-download")
     path = OUT / dl.value.suggested_filename
@@ -68,6 +74,9 @@ with sync_playwright() as p:
     check(data["app"] == "upsc-notes" and data["counts"]["notes"] == 1, f"backup file holds 1 note ({path.name})")
     page.wait_for_timeout(300)
     check("today" in page.locator(".last-backup").inner_text(), "last backup shows today")
+    page.goto(URL + "#/more")
+    page.wait_for_timeout(300)
+    check(page.inner_text("#more-backup") == "Back up, restore, PDF of everything", "the More reminder clears after a backup")
 
     # ---- offline reload (service worker) ----
     page.goto(URL + "#/notes")

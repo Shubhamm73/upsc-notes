@@ -149,7 +149,10 @@ try:
         items = (before[0].get("insights") or {}).get("items", [])
         check([i["text"] for i in items] == ["Key line from the old build"], f"{old_v}: quick insight made by Mark reviewed")
         old_file = json.loads(open(backup).read())
-        check(old_file["counts"] == {"notes": 1, "vocab": 1, "images": len(old["images"])}, f"{old_v}: backup file saved {old_file['counts']}")
+        want = {"notes": 1, "vocab": 1, "images": len(old["images"])}
+        if "cards" in old_file["counts"]:  # 0.8+ backups also count review cards: one per quick insight
+            want["cards"] = len(items)
+        check(old_file["counts"] == want, f"{old_v}: backup file saved {old_file['counts']}")
 
         # ---- switch the server to the new build: the installed app offers the update ----
         new_v = serve(NEW)

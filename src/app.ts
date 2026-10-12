@@ -1,7 +1,5 @@
-import { db, getMeta } from './db';
-import { daysSince } from './lib/dates';
 import { h } from './lib/h';
-import { ensurePersistence, isInstalled, storageStatus } from './lib/storage';
+import { ensurePersistence } from './lib/storage';
 import { mountNotes } from './views/notes';
 import { mountVocab } from './views/vocab';
 import { mountTrash } from './views/trash';
@@ -87,7 +85,7 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
     flush: async () => {
       await current?.view.flush();
     },
-    refreshBanners: () => void paintBanners(),
+    refreshBanners: () => paintBanners(),
     install: async () => {
       if (!deferredInstall) return false;
       installBtn.click();
@@ -96,7 +94,7 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
     canInstall: () => !!deferredInstall
   };
 
-  async function paintBanners() {
+  function paintBanners() {
     const list: HTMLElement[] = [];
     if (updateReady) {
       const btn = h('button', { type: 'button', class: 'primary' }, 'Reload now');
@@ -106,31 +104,7 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
       });
       list.push(h('div', { class: 'banner' }, h('span', {}, 'A new version of the app is ready. Your notes are saved.'), btn));
     }
-    const [count, last, s] = await Promise.all([
-      db.notes.count(),
-      getMeta<number | null>('lastBackupAt', null),
-      storageStatus()
-    ]);
-    const days = daysSince(last);
-    if (count > 0 && (days === null || days > 7)) {
-      list.push(
-        h(
-          'div',
-          { class: 'banner warn' },
-          h('span', {}, days === null ? 'No backup yet. A backup is the only copy if this tablet is lost.' : `Last backup was ${days} days ago.`),
-          h('a', { class: 'button', href: '#/settings' }, 'Back up now')
-        )
-      );
-    }
-    if (s.persisted === false && !isInstalled()) {
-      list.push(
-        h(
-          'div',
-          { class: 'banner warn' },
-          h('span', {}, 'Install the app (Chrome ⋮ menu → Install app) so the browser keeps your notes safe.')
-        )
-      );
-    }
+    // Backup and install reminders live in More → Backup & storage, not over every screen (owner, 0.8.1).
     banners.replaceChildren(...list);
   }
 
@@ -170,7 +144,7 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
       window.scrollTo(0, 0);
     }
     current.view.route(parts);
-    void paintBanners();
+    paintBanners();
   }
 
   // Save before the app is hidden or closed (Android may kill it in the background).
@@ -193,7 +167,7 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
     if (outcome === 'accepted') {
       ctx.toast('Installed. Open UPSC Notes from the home screen.');
       await ensurePersistence();
-      void paintBanners();
+      paintBanners();
     }
   });
   window.addEventListener('appinstalled', () => {
@@ -203,7 +177,7 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
 
   opts.onUpdate(() => {
     updateReady = true;
-    void paintBanners();
+    paintBanners();
   });
 
   searchBtn.addEventListener('click', () => openSearch(ctx));
