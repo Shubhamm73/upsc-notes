@@ -114,6 +114,52 @@ export function createToolbar(opts: { noteId: () => string; toast: (t: string) =
     btn('Remove', 'Remove selected image or chart', (e) => e.chain().focus().deleteSelection().run(), undefined, blockSelected, 'danger')
   );
 
+  // Inline link box (no pop-up dialogs): appears under the toolbar buttons.
+  const linkInput = h('input', { type: 'url', class: 'link-input', placeholder: 'https://…', 'aria-label': 'Link address', inputmode: 'url' });
+  const linkApply = h('button', { type: 'button', class: 'primary' }, 'Apply');
+  const linkRemove = h('button', { type: 'button', class: 'danger-outline' }, 'Remove link');
+  const linkCancel = h('button', { type: 'button' }, 'Cancel');
+  const linkRow = h('div', { class: 'link-row', role: 'group', 'aria-label': 'Link', hidden: true }, linkInput, linkApply, linkRemove, linkCancel);
+  const closeLinkRow = () => {
+    linkRow.hidden = true;
+    editor?.commands.focus();
+  };
+  const openLinkRow = () => {
+    if (!editor) return;
+    const href = editor.getAttributes('link').href as string | undefined;
+    linkInput.value = href ?? '';
+    linkRemove.hidden = !href;
+    linkRow.hidden = false;
+    linkInput.focus();
+    linkInput.select();
+  };
+  const applyLink = () => {
+    const e = editor;
+    if (!e) return;
+    let url = linkInput.value.trim();
+    if (!url) return closeLinkRow();
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = `https://${url}`;
+    const { empty } = e.state.selection;
+    if (empty && !e.isActive('link')) {
+      e.chain().focus().insertContent({ type: 'text', text: url, marks: [{ type: 'link', attrs: { href: url } }] }).run();
+    } else {
+      e.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    }
+    linkRow.hidden = true;
+  };
+  linkApply.addEventListener('click', applyLink);
+  linkInput.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      applyLink();
+    } else if (ev.key === 'Escape') closeLinkRow();
+  });
+  linkRemove.addEventListener('click', () => {
+    editor?.chain().focus().extendMarkRange('link').unsetLink().run();
+    linkRow.hidden = true;
+  });
+  linkCancel.addEventListener('click', closeLinkRow);
+
   const el = h(
     'div',
     { class: 'toolbar', role: 'toolbar', 'aria-label': 'Formatting' },
@@ -125,19 +171,7 @@ export function createToolbar(opts: { noteId: () => string; toast: (t: string) =
       btn('I', 'Italic', (e) => e.chain().focus().toggleItalic().run(), (e) => e.isActive('italic'), undefined, 'i'),
       btn('U', 'Underline', (e) => e.chain().focus().toggleUnderline().run(), (e) => e.isActive('underline'), undefined, 'u'),
       btn('Mark', 'Highlight', (e) => e.chain().focus().toggleHighlight().run(), (e) => e.isActive('highlight'), undefined, 'mark'),
-      btn(
-        'Link',
-        'Add or remove link',
-        (e) => {
-          if (e.isActive('link')) {
-            e.chain().focus().unsetLink().run();
-            return;
-          }
-          const url = window.prompt('Link address (https://…)');
-          if (url) e.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
-        },
-        (e) => e.isActive('link')
-      )
+      btn('Link', 'Add, edit or remove a link', () => openLinkRow(), (e) => e.isActive('link'))
     ),
     h(
       'div',
@@ -163,7 +197,8 @@ export function createToolbar(opts: { noteId: () => string; toast: (t: string) =
       btn('Undo', 'Undo', (e) => e.chain().focus().undo().run(), undefined, (e) => e.can().undo()),
       btn('Redo', 'Redo', (e) => e.chain().focus().redo().run(), undefined, (e) => e.can().redo())
     ),
-    fileInput
+    fileInput,
+    linkRow
   );
 
   function sync() {
@@ -190,6 +225,7 @@ export function createToolbar(opts: { noteId: () => string; toast: (t: string) =
     el,
     setEditor(next: Editor | null) {
       if (editor === next) return;
+      linkRow.hidden = true;
       editor?.off('transaction', onTx);
       editor = next;
       editor?.on('transaction', onTx);

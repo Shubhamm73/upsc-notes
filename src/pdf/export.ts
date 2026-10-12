@@ -3,6 +3,7 @@ import { db, SUBJECTS, type DocNode, type Note, type Vocab } from '../db';
 import { chartConfig, PRINT_PALETTE, readChart, type ChartData } from '../editor/chart-block';
 import { collectImageIds } from '../editor/images';
 import { ymd } from '../lib/dates';
+import { groupInsights } from '../lib/insights';
 
 /** A4 in points, with 48 pt margins. */
 const PAGE_W = 595.28;
@@ -224,6 +225,23 @@ function sectionContent(n: Note, sectionIds: string[] | null, ctx: Ctx, tocDepth
   return out;
 }
 
+function insightsBlock(n: Note): Content[] {
+  if (!n.insights?.items.length) return [];
+  const groups = groupInsights(n.insights);
+  const stack: Content[] = [{ text: 'Quick insights', bold: true, fontSize: 12, margin: [0, 0, 0, 4] }];
+  for (const g of groups) {
+    if (groups.length > 1) stack.push({ text: g.section.toUpperCase(), fontSize: 8, bold: true, color: MUTED, margin: [0, 4, 0, 2] });
+    stack.push({ ul: g.texts.map((t) => ['–  ', t].join('')), type: 'none', margin: [0, 0, 0, 2] });
+  }
+  return [
+    {
+      table: { widths: ['*'], body: [[{ stack, fillColor: '#fdf6dc', margin: [8, 6, 8, 6] }]] },
+      layout: { hLineWidth: () => 0.75, vLineWidth: () => 0.75, hLineColor: () => '#e8d48a', vLineColor: () => '#e8d48a' },
+      margin: [0, 0, 0, 12]
+    }
+  ];
+}
+
 function reflection(n: Note): Content[] {
   const out: Content[] = [];
   if (n.explain.trim()) out.push({ text: 'In my own words', style: 'section' }, { text: n.explain, margin: [0, 0, 0, 8] });
@@ -274,7 +292,12 @@ export async function buildPdf(scope: PdfScope): Promise<{ blob: Blob; filename:
     const docs = n.sections.filter((s) => !ids || ids.includes(s.id)).map((s) => s.doc);
     const ctx: Ctx = { images: await loadImages(docs), width: CONTENT_W };
     header = n.title || 'Untitled note';
-    content = [{ text: n.title || 'Untitled note', style: 'title' }, noteMeta(n), ...sectionContent(n, ids, ctx, false)];
+    content = [
+      { text: n.title || 'Untitled note', style: 'title' },
+      noteMeta(n),
+      ...(scope.kind === 'note' ? insightsBlock(n) : []),
+      ...sectionContent(n, ids, ctx, false)
+    ];
     if (scope.kind === 'note') content.push(...reflection(n));
     const sec = scope.kind === 'section' ? n.sections.find((s) => s.id === scope.sectionId) : null;
     filename = `${safeName(n.title)}${sec ? '-' + safeName(sec.heading || 'section') : ''}.pdf`;
@@ -297,6 +320,7 @@ export async function buildPdf(scope: PdfScope): Promise<{ blob: Blob; filename:
         content.push(
           { text: n.title || 'Untitled note', style: 'noteTitle', tocItem: 'toc', tocMargin: [12, 0, 0, 0], pageBreak: i > 0 ? 'before' : undefined },
           noteMeta(n),
+          ...insightsBlock(n),
           ...sectionContent(n, null, ctx, false),
           ...reflection(n)
         );

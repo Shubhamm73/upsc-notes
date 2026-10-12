@@ -1,4 +1,4 @@
-import { db, SCHEMA_VERSION, setMeta, type ImageRec, type Note, type Vocab } from '../db';
+import { db, RENAMED_SUBJECTS, SCHEMA_VERSION, setMeta, type ImageRec, type Note, type Vocab } from '../db';
 import { ymd } from './dates';
 
 const APP = 'upsc-notes';
@@ -104,6 +104,7 @@ export async function importBackup(file: File): Promise<ImportReport> {
     throw new BackupError("This file couldn't be read as a backup. Pick the .json file the app saved.");
   }
   const data = validate(parsed);
+  for (const n of data.notes) if (RENAMED_SUBJECTS[n.subject]) n.subject = RENAMED_SUBJECTS[n.subject];
   const report: ImportReport = { added: 0, updated: 0, keptNewer: 0, images: 0 };
 
   await db.transaction('rw', db.notes, db.vocab, db.images, async () => {

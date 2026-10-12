@@ -300,6 +300,15 @@ export function mountVocab(root: HTMLElement, ctx: AppContext): View {
       ctx.toast(`Next review ${prettyDate(d.nextReview)}`);
     });
 
+    const trashBtn = h('button', { type: 'button', class: 'danger-outline', id: 'word-trash' }, 'Move to trash');
+    trashBtn.addEventListener('click', async () => {
+      d.deletedAt = Date.now();
+      dirty = true;
+      await save();
+      ctx.toast(`Moved “${d.word || 'Untitled word'}” to Trash.`);
+      ctx.go('#/vocab');
+    });
+
     editorEl.replaceChildren(
       h(
         'div',
@@ -310,7 +319,8 @@ export function mountVocab(root: HTMLElement, ctx: AppContext): View {
         h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Meaning'), meaning),
         usesField(d),
         h('div', { class: 'grid2' }, chipField('Synonyms', 'v-syn', d.synonyms), chipField('Antonyms', 'v-ant', d.antonyms)),
-        h('div', { class: 'review' }, reviewInfo, reviewBtn)
+        h('div', { class: 'review' }, reviewInfo, reviewBtn),
+        h('div', { class: 'danger-zone' }, trashBtn)
       )
     );
     paintDuplicate();

@@ -1,11 +1,12 @@
 import { liveQuery, type Subscription } from 'dexie';
 import type { Editor } from '@tiptap/core';
-import { db, newId, SUBJECTS, type Note, type Section } from '../db';
+import { db, newId, SUBJECTS, type Note, type Section, type Vocab } from '../db';
 import { docToText, textToDoc } from '../lib/doc';
 import { createEditor } from '../editor/editor';
 import { createToolbar } from '../editor/toolbar';
 import { removeUnusedImages } from '../editor/images';
 import { runPdfExport } from '../pdf/run';
+import { extractInsights, groupInsights } from '../lib/insights';
 import { nextReviewAfter, prettyDate, ymd } from '../lib/dates';
 import { h } from '../lib/h';
 import type { AppContext, View } from '../app';
@@ -72,7 +73,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   // ---------- layout ----------
   const listEl = h('ul', { class: 'note-list', id: 'note-list' });
   const dueEl = h('span', { class: 'due-count' });
-  const search = h('input', { id: 'search', type: 'search', placeholder: 'Search notes', 'aria-label': 'Search notes' });
+  const search = h('input', { id: 'search', type: 'search', placeholder: 'Search notes and vocabulary', 'aria-label': 'Search notes and vocabulary' });
   const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Subject' });
   const modeAll = h('button', { type: 'button', 'aria-pressed': 'true' }, 'All notes');
   const modeDue = h('button', { type: 'button', 'aria-pressed': 'false' }, 'Due today');
@@ -120,6 +121,14 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     ctx.go('#/n/new');
   });
 
+  let words: Vocab[] = [];
+  const vocabSub = liveQuery(() => db.vocab.toArray()).subscribe({
+    next: (rows) => {
+      words = rows.filter((w) => !w.deletedAt);
+      if (filter.q) renderList();
+    }
+  });
+
   sub = liveQuery(() => db.notes.toArray()).subscribe({
     next: (rows) => {
       notes = rows.filter((n) => !n.deletedAt);
@@ -151,7 +160,27 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     dueEl.classList.toggle('is-due', due > 0);
 
     listEl.replaceChildren();
+    // Search also covers vocabulary, listed under the notes.
+    const wordHits = filter.q
+      ? words
+          .filter((w) => [w.word, w.meaning, ...w.synonyms, ...w.antonyms, ...w.uses.map((u) => u.sentence)].join(' ').toLowerCase().includes(filter.q))
+          .sort((a, b) => a.word.localeCompare(b.word))
+      : [];
+    const appendWords = () => {
+      if (!wordHits.length) return;
+      listEl.append(h('li', { class: 'list-divider' }, `Vocabulary · ${wordHits.length}`));
+      for (const w of wordHits) {
+        listEl.append(
+          h('li', {}, h('a', { class: 'note-card word-card', href: `#/v/${w.id}` }, h('strong', {}, w.word || 'Untitled word'), h('span', { class: 'meta' }, w.meaning || '—')))
+        );
+      }
+    };
     if (!items.length) {
+      if (wordHits.length) {
+        listEl.append(h('li', { class: 'empty-row' }, 'No notes match. Matching words:'));
+        appendWords();
+        return;
+      }
       const msg = !notes.length
         ? 'No notes yet. Tap New note and write one concept you understood today.'
         : filter.mode === 'due'
@@ -171,11 +200,17 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
             { class: 'note-card', href: `#/n/${n.id}`, 'aria-current': draft?.id === n.id ? 'true' : undefined },
             h('strong', {}, n.title || 'Untitled note'),
             h('span', { class: 'meta' }, [n.subject, n.topic].filter(Boolean).join(' · ')),
-            h('span', { class: isDue ? 'meta due' : 'meta' }, isDue ? 'Review today' : `Next review ${prettyDate(n.nextReview)}`)
+            h(
+              'span',
+              { class: isDue ? 'meta due' : 'meta' },
+              (isDue ? 'Review today' : `Next review ${prettyDate(n.nextReview)}`) +
+                (n.insights?.items.length ? ` · ${n.insights.items.length} quick ${n.insights.items.length === 1 ? 'insight' : 'insights'}` : '')
+            )
           )
         )
       );
     }
+    appendWords();
   }
 
   // ---------- saving ----------
@@ -346,14 +381,68 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     };
     paintReview();
     const reviewBtn = h('button', { type: 'button', class: 'primary', id: 'mark-reviewed' }, 'Mark reviewed');
+    // Quick insights: highlighted lines, gathered when the note is marked reviewed.
+    const insightsHost = h('div', { class: 'insights-host', id: 'insights' });
+    const paintInsights = () => {
+      const ins = d.insights;
+      insightsHost.replaceChildren();
+      if (!ins?.items.length) return;
+      const groups = groupInsights(ins);
+      const when = new Date(ins.generatedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+      const body = h(
+        'div',
+        { class: 'insights-body' },
+        ...groups.map((g) =>
+          h(
+            'div',
+            { class: 'insight-group' },
+            groups.length > 1 ? h('span', { class: 'insight-section' }, g.section) : null,
+            h('ul', { class: 'insight-list' }, ...g.texts.map((t) => h('li', {}, t)))
+          )
+        )
+      );
+      insightsHost.append(
+        h(
+          'details',
+          { class: 'insights', open: true },
+          h(
+            'summary',
+            {},
+            h('span', { class: 'insights-title' }, 'Quick insights'),
+            h('span', { class: 'insights-meta' }, `${ins.items.length} ${ins.items.length === 1 ? 'point' : 'points'} from your highlights · ${when}`)
+          ),
+          body
+        )
+      );
+    };
+    paintInsights();
+
     reviewBtn.addEventListener('click', () => {
       d.reviewCount += 1;
       d.lastReviewed = Date.now();
       d.nextReview = nextReviewAfter(d.reviewCount);
+      const ins = extractInsights(d);
+      if (ins.items.length) d.insights = ins;
+      else delete d.insights;
       paintReview();
+      paintInsights();
       dirty = true;
       void save();
-      ctx.toast(`Next review ${prettyDate(d.nextReview)}`);
+      ctx.toast(
+        ins.items.length
+          ? `Next review ${prettyDate(d.nextReview)}. ${ins.items.length} quick ${ins.items.length === 1 ? 'insight' : 'insights'} added at the top.`
+          : `Next review ${prettyDate(d.nextReview)}. Highlight key lines with Mark to get quick insights.`
+      );
+      if (ins.items.length) insightsHost.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+
+    const trashBtn = h('button', { type: 'button', class: 'danger-outline', id: 'note-trash' }, 'Move to trash');
+    trashBtn.addEventListener('click', async () => {
+      d.deletedAt = Date.now();
+      dirty = true;
+      await save();
+      ctx.toast(`Moved “${d.title || 'Untitled note'}” to Trash. Restore it from Trash if you need it.`);
+      ctx.go('#/');
     });
 
     const back = h('a', { class: 'back-link', href: '#/' }, '← All notes');
@@ -366,11 +455,13 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         { class: 'editor' },
         h('div', { class: 'editor-top' }, back, notePdf),
         field('Title', null, title),
+        insightsHost,
         h('div', { class: 'grid2' }, field('Subject', null, subject), field('Topic', null, topic)),
         h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Notes'), toolbar.el, sectionsHost),
         field('Explain it in your own words', 'Write it as if teaching a friend who has never heard of it.', explain),
         field('Connect it', 'Where else does this appear in the syllabus? How would it change an answer?', connect),
-        h('div', { class: 'review' }, reviewInfo, reviewBtn)
+        h('div', { class: 'review' }, reviewInfo, reviewBtn),
+        h('div', { class: 'danger-zone' }, trashBtn)
       )
     );
     renderSections(d, sectionsHost);
@@ -427,6 +518,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       await closeNote();
       clearTimeout(retry);
       sub?.unsubscribe();
+      vocabSub.unsubscribe();
       document.body.classList.remove('editing');
     }
   };
