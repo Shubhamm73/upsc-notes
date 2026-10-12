@@ -18,6 +18,43 @@ def check(cond, msg):
         failures.append(msg)
 
 
+def slash(page, query):
+    """Types /query at the start of an empty line and picks the first match (UI-2 slash menu)."""
+    page.keyboard.type("/" + query)
+    page.wait_for_selector("#insert-menu:not([hidden])")
+    page.keyboard.press("Enter")
+
+
+def mark(page, text):
+    """Selects `text` (its last occurrence in the focused editor) and marks it from the floating toolbar."""
+    page.evaluate("""(t) => {
+        const root = document.activeElement.closest('.ProseMirror');
+        const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let hit = null, n;
+        while ((n = w.nextNode())) { const i = n.textContent.lastIndexOf(t); if (i >= 0) hit = [n, i]; }
+        if (!hit) throw new Error('text not found: ' + t);
+        const r = document.createRange();
+        r.setStart(hit[0], hit[1]);
+        r.setEnd(hit[0], hit[1] + t.length);
+        getSelection().removeAllRanges();
+        getSelection().addRange(r);
+    }""", text)
+    page.wait_for_selector("#bubble:not([hidden])")
+    page.wait_for_timeout(150)
+    page.click("#bubble button[aria-label='Highlight']")
+    page.evaluate("""() => {
+        const s = getSelection();
+        let el = s.focusNode.nodeType === 1 ? s.focusNode : s.focusNode.parentElement;
+        el = el.closest('p, h2, h3, h4, li > p, td > p, th > p');
+        const r = document.createRange();
+        r.selectNodeContents(el);
+        r.collapse(false);
+        s.removeAllRanges();
+        s.addRange(r);
+    }""")
+    page.wait_for_timeout(100)
+
+
 # a landscape photo and a portrait PNG
 Image.new("RGB", (3000, 2000), (180, 90, 60)).save(OUT / "photo.jpg", quality=90)
 Image.new("RGBA", (600, 900), (40, 120, 200, 128)).save(OUT / "diagram.png")
@@ -52,27 +89,41 @@ with sync_playwright() as p:
 
     # ---- new rich note ----
     page.goto(URL + "#/n/new")
+    page.click(".tpl-card[data-template='blank']")
     page.wait_for_selector("#f-title")
     page.fill("#f-title", "Rich note test")
     ed = page.locator(".section-body .rich").first
     ed.click()
+    slash(page, "heading")
     page.keyboard.type("Heading here")
-    page.select_option(".tb-select", "2")
-    page.keyboard.press("End")
     page.keyboard.press("Enter")
-    page.click("button[aria-label='Dash list']")
+    slash(page, "dash")
     page.keyboard.type("dash one")
     page.keyboard.press("Enter")
     page.keyboard.type("dash two")
     page.keyboard.press("Enter")
     page.keyboard.press("Enter")  # leave list
-    page.click("button[aria-label='Numbered list']")
+    slash(page, "numbered")
     page.keyboard.type("first")
     page.keyboard.press("Enter")
     page.keyboard.press("Enter")
-    page.click("button[aria-label='Bold']")
     page.keyboard.type("bold text")
-    page.click("button[aria-label='Bold']")
+    page.keyboard.press("Shift+Home")
+    page.wait_for_selector("#bubble:not([hidden])", timeout=3000)
+    page.wait_for_timeout(150)
+    check(page.locator("#bubble").is_visible(), "floating toolbar appears on a selection")
+    page.click("#bubble button[aria-label='Bold']")
+    page.evaluate("""() => {
+        const s = getSelection();
+        let el = s.focusNode.nodeType === 1 ? s.focusNode : s.focusNode.parentElement;
+        el = el.closest('p, h2, h3, h4, li > p, td > p, th > p');
+        const r = document.createRange();
+        r.selectNodeContents(el);
+        r.collapse(false);
+        s.removeAllRanges();
+        s.addRange(r);
+    }""")
+    page.wait_for_timeout(100)
     page.keyboard.press("Enter")
     check(ed.locator("h2").count() == 1, "heading applied")
     check(ed.locator("ul[data-list-style='dash'] li").count() == 2, "dash list with 2 items")
@@ -80,7 +131,7 @@ with sync_playwright() as p:
     check(ed.locator("strong").count() == 1, "bold text")
 
     # table
-    page.click("button[aria-label='Insert table']")
+    slash(page, "table")
     check(ed.locator("table").count() == 1, "table inserted")
     check(page.locator(".tb-table").is_visible(), "table tools appear inside a table")
     page.click("button[aria-label='Add row below']")
@@ -90,7 +141,7 @@ with sync_playwright() as p:
     # move caret out of the table to the end, then image
     ed.locator("p").last.click()
     with page.expect_file_chooser() as fc:
-        page.click("button[aria-label='Insert image from this device']")
+        slash(page, "image")
     fc.value.set_files([str(OUT / "photo.jpg"), str(OUT / "diagram.png")])
     page.wait_for_function("document.querySelectorAll('.img-block img[src]').length === 2", timeout=10000)
     check(True, "two images inserted and shown")
@@ -115,7 +166,7 @@ with sync_playwright() as p:
 
     # chart
     ed.locator("p").last.click()
-    page.click("button[aria-label='Insert chart']")
+    slash(page, "chart")
     page.wait_for_selector(".chart-block canvas")
     page.click(".chart-edit")
     page.fill(".chart-row input", "Seats won")
@@ -130,7 +181,8 @@ with sync_playwright() as p:
     page.locator(".section-heading").nth(1).fill("Case law")
     page.locator(".section-body .rich").nth(1).click()
     page.keyboard.type("Kesavananda Bharati 1973")
-    page.click("button[aria-label='Move section up'] >> nth=1")
+    page.click(".section-head button[aria-label='Section 2 options']")
+    page.click(".popover button[aria-label='Move section 2 up']")
     heads = page.eval_on_selector_all(".section-heading", "els => els.map(e => e.value)")
     check(heads == ["Case law", "Basics"], f"section reordered ({heads})")
 
@@ -179,8 +231,8 @@ with sync_playwright() as p:
     pc = browser.new_context(viewport={"width": 800, "height": 1280})
     pp = pc.new_page()
     pp.on("pageerror", lambda e: errors.append(str(e)))
-    pp.goto(URL + "#/n/new")
-    pp.wait_for_selector(".toolbar")
+    pp.goto(URL + "#/n/new/blank")
+    pp.wait_for_selector(".canvas-head")
     overflow = pp.evaluate("document.documentElement.scrollWidth > window.innerWidth")
     check(not overflow, "portrait: no sideways page scroll")
     pp.screenshot(path=str(OUT / "m2-portrait.png"))

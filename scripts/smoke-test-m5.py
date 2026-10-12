@@ -17,6 +17,43 @@ def check(cond, msg):
         failures.append(msg)
 
 
+def slash(page, query):
+    """Types /query at the start of an empty line and picks the first match (UI-2 slash menu)."""
+    page.keyboard.type("/" + query)
+    page.wait_for_selector("#insert-menu:not([hidden])")
+    page.keyboard.press("Enter")
+
+
+def mark(page, text):
+    """Selects `text` (its last occurrence in the focused editor) and marks it from the floating toolbar."""
+    page.evaluate("""(t) => {
+        const root = document.activeElement.closest('.ProseMirror');
+        const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let hit = null, n;
+        while ((n = w.nextNode())) { const i = n.textContent.lastIndexOf(t); if (i >= 0) hit = [n, i]; }
+        if (!hit) throw new Error('text not found: ' + t);
+        const r = document.createRange();
+        r.setStart(hit[0], hit[1]);
+        r.setEnd(hit[0], hit[1] + t.length);
+        getSelection().removeAllRanges();
+        getSelection().addRange(r);
+    }""", text)
+    page.wait_for_selector("#bubble:not([hidden])")
+    page.wait_for_timeout(150)
+    page.click("#bubble button[aria-label='Highlight']")
+    page.evaluate("""() => {
+        const s = getSelection();
+        let el = s.focusNode.nodeType === 1 ? s.focusNode : s.focusNode.parentElement;
+        el = el.closest('p, h2, h3, h4, li > p, td > p, th > p');
+        const r = document.createRange();
+        r.selectNodeContents(el);
+        r.collapse(false);
+        s.removeAllRanges();
+        s.addRange(r);
+    }""")
+    page.wait_for_timeout(100)
+
+
 IDB_PUT = """([store, rec, version]) => new Promise((res, rej) => {
   const r = indexedDB.open('upsc-notes', version);
   r.onupgradeneeded = () => { const d = r.result;
@@ -55,28 +92,23 @@ with sync_playwright() as p:
     check("Interview" in chips and "CSAT" not in chips, f"subject chips show Interview ({chips})")
 
     # ---- quick insights ----
-    page.goto(URL + "#/n/new")
+    page.goto(URL + "#/n/new/blank")
     page.wait_for_selector("#f-title")
     page.fill("#f-title", "Fundamental Rights")
     page.fill(".section-heading", "Basics")
     ed = page.locator(".section-body .rich").first
     ed.click()
-    page.keyboard.type("Part III of the Constitution. ")
-    page.click("button[aria-label='Highlight']")
-    page.keyboard.type("Justiciable rights")
-    page.click("button[aria-label='Highlight']")
-    page.keyboard.type(" unlike DPSP.")
+    page.keyboard.type("Part III of the Constitution. Justiciable rights unlike DPSP.")
+    mark(page, "Justiciable rights")
     page.keyboard.press("Enter")
-    page.click("button[aria-label='Dash list']")
-    page.click("button[aria-label='Highlight']")
+    slash(page, "dash")
     page.keyboard.type("Article 32 is the heart and soul")
-    page.click("button[aria-label='Highlight']")
+    mark(page, "Article 32 is the heart and soul")
     page.click("#add-section")
     page.locator(".section-heading").nth(1).fill("Cases")
     page.locator(".section-body .rich").nth(1).click()
-    page.click("button[aria-label='Highlight']")
     page.keyboard.type("Maneka Gandhi 1978")
-    page.click("button[aria-label='Highlight']")
+    mark(page, "Maneka Gandhi 1978")
     check(page.locator("#insights details").count() == 0, "no insights card before review")
     page.click("#mark-reviewed")
     page.wait_for_selector("#insights details")
@@ -89,6 +121,7 @@ with sync_playwright() as p:
     page.wait_for_selector("#insights details")
     check(page.locator("#insights li").count() == 3, "insights persist after reload")
     check("3 quick insights" in page.locator(".note-card[aria-current='true']").inner_text(), "list card shows insight count")
+    page.click("#details summary")
     with page.expect_download(timeout=60000) as dl:
         page.click("#note-pdf")
     pdf = OUT / dl.value.suggested_filename
@@ -101,7 +134,11 @@ with sync_playwright() as p:
     page.locator(".section-body .rich").nth(1).click()
     page.keyboard.press("End")
     page.keyboard.press("Enter")
-    page.click("button[aria-label='Add, edit or remove a link']")
+    page.keyboard.type("Indian Kanoon")
+    page.keyboard.press("Shift+Home")
+    page.wait_for_selector("#bubble:not([hidden])")
+    page.wait_for_timeout(150)
+    page.click("#bubble button[aria-label='Add, edit or remove a link']")
     check(page.locator(".link-row").is_visible(), "inline link box opens (no pop-up)")
     page.fill(".link-input", "indiankanoon.org")
     page.keyboard.press("Enter")
@@ -120,6 +157,7 @@ with sync_playwright() as p:
     # ---- trash: move, restore, delete forever ----
     page.fill("#search", "")
     page.click(".note-card:has-text('Old CSAT note')")
+    page.click("#details summary")
     page.click("#note-trash")
     page.wait_for_timeout(500)
     check(page.locator(".note-card:has-text('Old CSAT note')").count() == 0, "trashed note leaves the list")
@@ -133,6 +171,7 @@ with sync_playwright() as p:
     check(page.locator(".note-card:has-text('Old CSAT note')").count() == 1, "restored note is back")
 
     page.click(".note-card:has-text('Fundamental Rights')")
+    page.click("#details summary")
     page.click("#note-trash")
     page.wait_for_url("**/#/notes")
     page.goto(URL + "#/trash")

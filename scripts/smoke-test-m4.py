@@ -19,6 +19,43 @@ def check(cond, msg):
         failures.append(msg)
 
 
+def slash(page, query):
+    """Types /query at the start of an empty line and picks the first match (UI-2 slash menu)."""
+    page.keyboard.type("/" + query)
+    page.wait_for_selector("#insert-menu:not([hidden])")
+    page.keyboard.press("Enter")
+
+
+def mark(page, text):
+    """Selects `text` (its last occurrence in the focused editor) and marks it from the floating toolbar."""
+    page.evaluate("""(t) => {
+        const root = document.activeElement.closest('.ProseMirror');
+        const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let hit = null, n;
+        while ((n = w.nextNode())) { const i = n.textContent.lastIndexOf(t); if (i >= 0) hit = [n, i]; }
+        if (!hit) throw new Error('text not found: ' + t);
+        const r = document.createRange();
+        r.setStart(hit[0], hit[1]);
+        r.setEnd(hit[0], hit[1] + t.length);
+        getSelection().removeAllRanges();
+        getSelection().addRange(r);
+    }""", text)
+    page.wait_for_selector("#bubble:not([hidden])")
+    page.wait_for_timeout(150)
+    page.click("#bubble button[aria-label='Highlight']")
+    page.evaluate("""() => {
+        const s = getSelection();
+        let el = s.focusNode.nodeType === 1 ? s.focusNode : s.focusNode.parentElement;
+        el = el.closest('p, h2, h3, h4, li > p, td > p, th > p');
+        const r = document.createRange();
+        r.selectNodeContents(el);
+        r.collapse(false);
+        s.removeAllRanges();
+        s.addRange(r);
+    }""")
+    page.wait_for_timeout(100)
+
+
 def text_of(pdf: Path) -> str:
     return subprocess.run(["pdftotext", "-layout", str(pdf), "-"], capture_output=True, text=True).stdout
 
@@ -40,7 +77,7 @@ with sync_playwright() as p:
     page.on("pageerror", lambda e: errors.append(str(e)))
 
     # ---- build a note with every block type ----
-    page.goto(URL + "#/n/new")
+    page.goto(URL + "#/n/new/blank")
     page.wait_for_selector("#f-title")
     page.fill("#f-title", "Parliament")
     page.select_option("#f-subject", "GS2")
@@ -48,25 +85,23 @@ with sync_playwright() as p:
     page.fill(".section-heading", "Composition")
     ed = page.locator(".section-body .rich").first
     ed.click()
+    slash(page, "heading")
     page.keyboard.type("Lok Sabha basics")
-    page.select_option(".tb-select", "2")
-    page.keyboard.press("End")
     page.keyboard.press("Enter")
-    page.click("button[aria-label='Dash list']")
+    slash(page, "dash")
     page.keyboard.type("Max strength 552")
     page.keyboard.press("Enter")
     page.keyboard.type("Article 81")
     page.keyboard.press("Enter")
     page.keyboard.press("Enter")
-    page.click("button[aria-label='Numbered list']")
+    slash(page, "numbered")
     page.keyboard.type("Speaker elected")
     page.keyboard.press("Enter")
     page.keyboard.press("Enter")
-    page.click("button[aria-label='Highlight']")
     page.keyboard.type("Money bills start here")
-    page.click("button[aria-label='Highlight']")
+    mark(page, "Money bills start here")
     page.keyboard.press("Enter")
-    page.click("button[aria-label='Insert table']")
+    slash(page, "table")
     page.keyboard.type("House")
     page.keyboard.press("Tab")
     page.keyboard.type("Term")
@@ -78,28 +113,31 @@ with sync_playwright() as p:
     page.keyboard.type("5 years")
     ed.locator("p").last.click()
     with page.expect_file_chooser() as fc:
-        page.click("button[aria-label='Insert image from this device']")
+        slash(page, "image")
     fc.value.set_files(str(OUT / "photo.jpg"))
     page.wait_for_selector(".img-block img[src]")
     ed.locator("p").last.click()
-    page.click("button[aria-label='Insert chart']")
+    slash(page, "chart")
     page.wait_for_selector(".chart-block canvas")
     page.click("#add-section")
     page.locator(".section-heading").nth(1).fill("Powers")
     page.locator(".section-body .rich").nth(1).click()
     page.keyboard.type("No-confidence motion only in Lok Sabha")
+    page.click("#details summary")
     page.fill("#f-explain", "Parliament makes laws and holds the executive to account.")
     expect(page.locator(".save-status")).to_have_text("Saved on this tablet", timeout=5000)
 
-    def grab(click_selector):
+    def grab(*click_selectors):
         with page.expect_download(timeout=60000) as dl:
-            page.click(click_selector)
+            for sel in click_selectors:
+                page.click(sel)
         path = OUT / dl.value.suggested_filename
         dl.value.save_as(path)
         return path
 
     # ---- section PDF ----
-    sec = grab("button[aria-label='Export section 2 as PDF']")
+    # the section PDF now lives in the section's menu in the outline rail
+    sec = grab("#outline button[aria-label='Section 2 options']", ".popover button[aria-label='Export section 2 as PDF']")
     t = text_of(sec)
     check(sec.name == "Parliament-Powers.pdf", f"section file name ({sec.name})")
     check("No-confidence motion" in t and "Max strength" not in t, "section PDF holds only that section")

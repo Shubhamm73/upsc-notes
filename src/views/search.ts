@@ -1,5 +1,6 @@
 import { db } from '../db';
-import { docToText } from '../lib/doc';
+import { calloutsIn, noteSearchText } from '../lib/doc';
+import { calloutKind } from '../lib/callouts';
 import { h } from '../lib/h';
 import { icon } from '../lib/icons';
 import type { AppContext } from '../app';
@@ -45,9 +46,20 @@ export function openSearch(ctx: AppContext) {
     }
     const [notes, words] = await Promise.all([db.notes.toArray(), db.vocab.toArray()]);
     if (mine !== seq) return;
+    // A note whose callouts match ("case" → its Case callouts) is listed first, with the callout as a hint.
+    const calloutHint = (n: (typeof notes)[number]) => {
+      for (const sec of n.sections) {
+        for (const c of calloutsIn(sec.doc)) {
+          const label = calloutKind(c.kind).label;
+          if (`${label} callout`.toLowerCase().includes(q) || c.text.toLowerCase().includes(q)) return `${label}: ${c.text.slice(0, 80)}${c.text.length > 80 ? '…' : ''}`;
+        }
+      }
+      return null;
+    };
     const noteHits = notes
-      .filter((n) => !n.deletedAt && [n.title, n.topic, n.subject, n.explain, n.connect, ...n.sections.map((s) => s.heading + ' ' + docToText(s.doc))].join(' ').toLowerCase().includes(q))
-      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .filter((n) => !n.deletedAt && noteSearchText(n).includes(q))
+      .map((n) => ({ n, hint: calloutHint(n) }))
+      .sort((a, b) => Number(!!b.hint) - Number(!!a.hint) || b.n.updatedAt - a.n.updatedAt)
       .slice(0, 12);
     const wordHits = words
       .filter((w) => !w.deletedAt && [w.word, w.meaning, ...w.synonyms, ...w.antonyms, ...w.uses.map((u) => u.sentence)].join(' ').toLowerCase().includes(q))
@@ -58,8 +70,14 @@ export function openSearch(ctx: AppContext) {
     };
     const items: HTMLElement[] = [];
     if (noteHits.length) items.push(h('li', { class: 'list-divider' }, `Notes · ${noteHits.length}`));
-    for (const n of noteHits) {
-      const a = h('a', { href: `#/n/${n.id}`, class: 'search-hit' }, h('strong', {}, n.title || 'Untitled note'), h('span', { class: 'meta' }, [n.subject, n.topic].filter(Boolean).join(' · ')));
+    for (const { n, hint } of noteHits) {
+      const a = h(
+        'a',
+        { href: `#/n/${n.id}`, class: 'search-hit' },
+        h('strong', {}, n.title || 'Untitled note'),
+        h('span', { class: 'meta' }, [n.subject, n.topic].filter(Boolean).join(' · ')),
+        hint ? h('span', { class: 'meta callout-hit' }, hint) : null
+      );
       a.addEventListener('click', (e) => (e.preventDefault(), go(`#/n/${n.id}`)()));
       items.push(h('li', {}, a));
     }

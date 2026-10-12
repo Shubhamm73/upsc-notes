@@ -33,6 +33,7 @@ with sync_playwright() as p:
     page.goto(URL + "#/notes")
     page.wait_for_function("navigator.serviceWorker && navigator.serviceWorker.controller !== null || true")
     page.click("#new-note")
+    page.click(".tpl-card[data-template='blank']")
     page.fill("#f-title", "Separation of powers")
     page.select_option("#f-subject", "GS2")
     page.fill("#f-topic", "Judiciary")
@@ -40,13 +41,15 @@ with sync_playwright() as p:
     page.keyboard.type("Montesquieu.")
     page.keyboard.press("Enter")
     page.keyboard.type("Article 50: separate judiciary from executive.")
+    page.click("#details summary")
     page.fill("#f-explain", "No single organ holds all power.")
     expect(page.locator(".save-status")).to_have_text("Saved on this tablet", timeout=5000)
     check("#/n/" in page.url and not page.url.endswith("/new"), "URL switches from new to the note id after first save")
 
     page.reload()
-    page.wait_for_selector(".note-card")
-    check(page.locator(".note-card strong").first.inner_text() == "Separation of powers", "note survives reload")
+    page.wait_for_selector("#f-title")  # an open note is a full-page canvas; the list is one tap away
+    check(page.input_value("#f-title") == "Separation of powers", "note survives reload")
+    check(page.locator(".note-card strong").first.text_content() == "Separation of powers", "note listed after reload")
     check(page.locator(".section-body .rich").first.inner_text().startswith("Montesquieu."), "body text survives reload")
 
     page.click("#mark-reviewed")

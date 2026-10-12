@@ -67,6 +67,7 @@ with sync_playwright() as p:
     check("RBI kept" in page.input_value("#f-title"), "Ctrl+K search opens the matching note")
 
     # ---- per-note font style ----
+    page.click("#details summary")
     page.select_option("#note-style", "notebook")
     check("font-notebook" in page.locator(".editor").get_attribute("class"), "per-note font style applied")
 

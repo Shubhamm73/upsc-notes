@@ -4,6 +4,7 @@ import { chartConfig, PRINT_PALETTE, readChart, type ChartData } from '../editor
 import { collectImageIds } from '../editor/images';
 import { ymd } from '../lib/dates';
 import { groupInsights } from '../lib/insights';
+import { calloutKind } from '../lib/callouts';
 
 /** A4 in points, with 48 pt margins. */
 const PAGE_W = 595.28;
@@ -153,6 +154,28 @@ function block(n: DocNode, ctx: Ctx): Content | null {
         ],
         unbreakable: true,
         margin: [0, 4, 0, 10]
+      };
+    }
+    case 'callout': {
+      const k = calloutKind(n.attrs?.kind);
+      return {
+        table: {
+          widths: ['*'],
+          body: [
+            [
+              {
+                stack: [
+                  { text: k.label.toUpperCase(), fontSize: 8.5, bold: true, color: k.print, characterSpacing: 0.8, margin: [0, 0, 0, 3] },
+                  ...blocks(n.content, { ...ctx, width: ctx.width - 24 })
+                ],
+                fillColor: k.printBg,
+                margin: [8, 6, 8, 2]
+              }
+            ]
+          ]
+        },
+        layout: 'noBorders',
+        margin: [0, 2, 0, 10]
       };
     }
     default:

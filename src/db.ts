@@ -35,6 +35,8 @@ export interface Note {
   connect: string;
   /** Snapshot of highlighted lines, rebuilt each time the note is marked reviewed. */
   insights?: NoteInsights;
+  /** Template the note started from (see TEMPLATES); absent = Blank. Added in 0.7, no index, so no Dexie version bump. */
+  template?: string;
   /** Optional font style for this note only (see FONT_STYLES); absent = the app's style. */
   fontStyle?: string;
   nextReview: string; // YYYY-MM-DD, local date

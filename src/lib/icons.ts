@@ -15,7 +15,20 @@ const PATHS: Record<string, string> = {
   box: '<path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M4 7l8 4 8-4M12 11v10"/>',
   trash: '<path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/>',
   download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
-  close: '<path d="M6 6l12 12M18 6L6 18"/>'
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  back: '<path d="M15 6l-6 6 6 6"/>',
+  chevron: '<path d="M9 6l6 6-6 6"/>',
+  grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
+  focus: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  undo: '<path d="M9 6L4 11l5 5"/><path d="M4 11h10a5 5 0 0 1 0 10h-3"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="0.8"/><circle cx="4.5" cy="12" r="0.8"/><circle cx="4.5" cy="18" r="0.8"/>',
+  marker: '<path d="M4 20l4-1 10-10-3-3L5 16z"/><path d="M13 7l3 3"/>',
+  table: '<rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 10h16M4 14.5h16M10 5v14"/>',
+  data: '<path d="M5 20V11M12 20V5M19 20v-7M3 20h18"/>',
+  image: '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20 16l-5-5-8 8"/>',
+  article: '<path d="M14.5 6.5C14 5 13 4.5 12 4.5c-1.7 0-3 1-3 2.4 0 3.2 6 2.4 6 5.6 0 1.4-1.3 2.4-3 2.4"/><path d="M9.5 17.5c.5 1.5 1.5 2 2.5 2 1.7 0 3-1 3-2.4 0-3.2-6-2.4-6-5.6 0-1.4 1.3-2.4 3-2.4"/>',
+  case: '<path d="M12 4v16M7 20h10M5 8h14M7 8l-3 6h6zM17 8l-3 6h6z"/>',
+  example: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>'
 };
 
 export function icon(name: keyof typeof PATHS | string, size = 22): SVGSVGElement {
