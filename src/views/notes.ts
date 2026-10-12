@@ -5,6 +5,7 @@ import { docToText, textToDoc } from '../lib/doc';
 import { createEditor } from '../editor/editor';
 import { createToolbar } from '../editor/toolbar';
 import { removeUnusedImages } from '../editor/images';
+import { runPdfExport } from '../pdf/run';
 import { nextReviewAfter, prettyDate, ymd } from '../lib/dates';
 import { h } from '../lib/h';
 import type { AppContext, View } from '../app';
@@ -112,7 +113,12 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   };
   modeAll.addEventListener('click', () => setMode('all'));
   modeDue.addEventListener('click', () => setMode('due'));
-  newBtn.addEventListener('click', () => ctx.go('#/n/new'));
+  newBtn.addEventListener('click', () => {
+    if (location.hash === '#/n/new') return; // already on a fresh one
+    for (const ed of editors.values()) ed.setEditable(false);
+    editorEl.replaceChildren(); // the previous note leaves at once; its unsaved text is still saved from memory
+    ctx.go('#/n/new');
+  });
 
   sub = liveQuery(() => db.notes.toArray()).subscribe({
     next: (rows) => {
@@ -256,6 +262,8 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       down.addEventListener('click', () => move(1));
 
       // Two-tap delete: the first tap arms it for 4 seconds.
+      const pdf = h('button', { type: 'button', class: 'sec-btn', 'aria-label': `Export section ${i + 1} as PDF` }, 'PDF');
+      pdf.addEventListener('click', () => void runPdfExport({ kind: 'section', note: structuredClone(d), sectionId: s.id }, ctx, pdf));
       const del = h('button', { type: 'button', class: 'sec-btn danger', disabled: d.sections.length === 1 }, 'Delete section');
       let armed: number | undefined;
       del.addEventListener('click', () => {
@@ -281,7 +289,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         h(
           'section',
           { class: 'note-section' },
-          h('div', { class: 'section-head' }, heading, h('div', { class: 'sec-actions' }, up, down, del)),
+          h('div', { class: 'section-head' }, heading, h('div', { class: 'sec-actions' }, up, down, pdf, del)),
           bodyEl
         )
       );
@@ -349,12 +357,14 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     });
 
     const back = h('a', { class: 'back-link', href: '#/' }, '← All notes');
+    const notePdf = h('button', { type: 'button', id: 'note-pdf' }, 'Export note as PDF');
+    notePdf.addEventListener('click', () => void runPdfExport({ kind: 'note', note: structuredClone(d) }, ctx, notePdf));
 
     editorEl.replaceChildren(
       h(
         'div',
         { class: 'editor' },
-        back,
+        h('div', { class: 'editor-top' }, back, notePdf),
         field('Title', null, title),
         h('div', { class: 'grid2' }, field('Subject', null, subject), field('Topic', null, topic)),
         h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Notes'), toolbar.el, sectionsHost),
@@ -371,6 +381,9 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   async function open(id: string | null) {
     document.body.classList.toggle('editing', !!id);
     if (id && id !== 'new' && draft?.id === id) return; // already open (e.g. after the first save renamed the URL)
+    // Take the old note off screen first, so nothing typed during the save lands in it.
+    for (const ed of editors.values()) ed.setEditable(false);
+    editorEl.replaceChildren();
     await closeNote();
     if (isNew && draft && id !== draft.id) isNew = false; // an untouched new note is simply dropped
     if (!id) {

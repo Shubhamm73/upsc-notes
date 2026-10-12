@@ -1,4 +1,5 @@
-import { db, getMeta } from '../db';
+import { db, getMeta, SUBJECTS } from '../db';
+import { runPdfExport } from '../pdf/run';
 import {
   BackupError,
   buildBackup,
@@ -24,6 +25,12 @@ export function mountSettings(root: HTMLElement, ctx: AppContext): View {
   const fileInput = h('input', { type: 'file', id: 'import-file', accept: '.json,application/json' });
   const importBtn = h('button', { type: 'button', id: 'backup-import' }, 'Import a backup file');
   const protectBtn = h('button', { type: 'button', id: 'protect' }, 'Ask the browser to protect my data');
+  const pdfSubject = h('select', { id: 'pdf-subject', 'aria-label': 'Subject to export' }, h('option', { value: 'All' }, 'All subjects'), ...SUBJECTS.map((s) => h('option', { value: s }, s)));
+  const pdfVocab = h('input', { type: 'checkbox', id: 'pdf-vocab', checked: true });
+  const pdfBtn = h('button', { type: 'button', class: 'primary', id: 'pdf-all' }, 'Export PDF');
+  pdfBtn.addEventListener('click', () =>
+    void runPdfExport({ kind: 'all', subject: pdfSubject.value, includeVocab: pdfVocab.checked }, ctx, pdfBtn)
+  );
 
   root.replaceChildren(
     h(
@@ -49,6 +56,14 @@ export function mountSettings(root: HTMLElement, ctx: AppContext): View {
         lastBackup,
         h('p', {}, 'Make a backup at least once a week and copy it to Google Drive. The file holds every note, word and image, including trash.'),
         h('div', { class: 'actions' }, saveBtn, shareBtn)
+      ),
+      h(
+        'section',
+        { class: 'card-block' },
+        h('h2', {}, 'PDF of everything'),
+        h('p', {}, 'One PDF with a contents page, notes grouped by subject, and your vocabulary as a table. For one note or one section, use the PDF buttons inside the note.'),
+        h('div', { class: 'actions pdf-opts' }, pdfSubject, h('label', { class: 'check' }, pdfVocab, ' Include vocabulary')),
+        h('div', { class: 'actions' }, pdfBtn)
       ),
       h(
         'section',

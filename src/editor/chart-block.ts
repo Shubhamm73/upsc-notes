@@ -1,5 +1,4 @@
 import { Node, mergeAttributes } from '@tiptap/core';
-import type { Node as PMNode } from '@tiptap/pm/model';
 import {
   ArcElement,
   BarController,
@@ -58,8 +57,13 @@ export function chartPalette(): string[] {
 }
 
 /** Chart.js config shared by the editor view and the PDF export. */
-export function chartConfig(d: ChartData, opts: { animate?: boolean; text?: string; grid?: string } = {}): ChartConfiguration {
-  const colors = chartPalette();
+export const PRINT_PALETTE = ['#2d5b4e', '#c27c2c', '#4f6fa8', '#a3475a', '#6b8f3a', '#7a5ea8'];
+
+export function chartConfig(
+  d: ChartData,
+  opts: { animate?: boolean; text?: string; grid?: string; palette?: string[]; surface?: string } = {}
+): ChartConfiguration {
+  const colors = opts.palette ?? chartPalette();
   const text = opts.text ?? cssVar('--fg');
   const grid = opts.grid ?? cssVar('--line');
   const pie = d.kind === 'pie';
@@ -72,7 +76,7 @@ export function chartConfig(d: ChartData, opts: { animate?: boolean; text?: stri
         label: s.name,
         data: d.labels.map((_, j) => Number(s.values[j]) || 0),
         backgroundColor: pie ? d.labels.map((_, j) => colors[j % colors.length]) : colors[i % colors.length],
-        borderColor: pie ? cssVar('--surface') || '#fff' : colors[i % colors.length],
+        borderColor: pie ? opts.surface ?? (cssVar('--surface') || '#fff') : colors[i % colors.length],
         borderWidth: pie ? 2 : d.kind === 'line' ? 2.5 : 0,
         borderRadius: d.kind === 'bar' ? 4 : 0,
         pointRadius: d.kind === 'line' ? 4 : 0,
@@ -98,8 +102,7 @@ export function chartConfig(d: ChartData, opts: { animate?: boolean; text?: stri
   } as ChartConfiguration;
 }
 
-function readAttrs(n: PMNode): ChartData {
-  const a = n.attrs as Partial<ChartData>;
+export function readChart(a: Partial<ChartData>): ChartData {
   return {
     kind: (a.kind as ChartKind) ?? 'bar',
     title: a.title ?? '',
@@ -183,7 +186,7 @@ export const ChartBlock = Node.create({
 
       // ---------- inline data editor ----------
       const openPanel = () => {
-        const d = readAttrs(current);
+        const d = readChart(current.attrs);
         const render = () => {
           panel.replaceChildren();
           const row1 = el('div', 'chart-row');
@@ -303,17 +306,17 @@ export const ChartBlock = Node.create({
       editBtn.addEventListener('click', openPanel);
 
       const media = window.matchMedia('(prefers-color-scheme: dark)');
-      const onTheme = () => draw(readAttrs(current));
+      const onTheme = () => draw(readChart(current.attrs));
       media.addEventListener('change', onTheme);
       // Draw after the node is in the document so the canvas has a size.
-      requestAnimationFrame(() => draw(readAttrs(current)));
+      requestAnimationFrame(() => draw(readChart(current.attrs)));
 
       return {
         dom: fig,
         update(n) {
           if (n.type.name !== 'chartBlock') return false;
           current = n;
-          draw(readAttrs(n));
+          draw(readChart(n.attrs));
           return true;
         },
         selectNode() {

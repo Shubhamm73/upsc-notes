@@ -74,7 +74,11 @@ export function mountVocab(root: HTMLElement, ctx: AppContext): View {
   };
   modeAll.addEventListener('click', () => setMode('all'));
   modeDue.addEventListener('click', () => setMode('due'));
-  newBtn.addEventListener('click', () => ctx.go('#/v/new'));
+  newBtn.addEventListener('click', () => {
+    if (location.hash === '#/v/new') return; // already on a fresh one
+    editorEl.replaceChildren(); // the previous word's form leaves at once; its unsaved text is still saved from memory
+    ctx.go('#/v/new');
+  });
 
   const sub: Subscription = liveQuery(() => db.vocab.toArray()).subscribe({
     next: (rows) => {
@@ -317,6 +321,8 @@ export function mountVocab(root: HTMLElement, ctx: AppContext): View {
   async function open(id: string | null) {
     document.body.classList.toggle('editing', !!id);
     if (id && id !== 'new' && draft?.id === id) return;
+    // Take the old form off screen first, so nothing typed during the save lands in the previous word.
+    editorEl.replaceChildren();
     if (dirty) await save();
     if (isNew && draft && id !== draft.id) isNew = false;
     if (!id) {

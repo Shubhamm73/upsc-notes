@@ -354,3 +354,10 @@ main { padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 24px); }
 .use-meta select { width: auto; }
 .dup a { margin-left: 4px; }
 #add-use { justify-self: start; }
+
+/* ---------- PDF export (M4) ---------- */
+.editor-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.editor-top #note-pdf { margin-left: auto; }
+.pdf-opts select { width: auto; }
+.check { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.check input { width: 22px; height: 22px; min-height: 0; }
