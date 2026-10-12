@@ -7,6 +7,7 @@ import { addImage } from './images';
 import { calloutKindAt, removeCallout, setCallout } from './callout';
 import { CALLOUT_ITEMS, INSERT_ITEMS, cycleList, filterItems, insertBlocks, type InsertEnv, type InsertItem } from './insert';
 import { sweepKey, type SlashHook } from './editor';
+import type { PasteHooks } from './paste';
 
 export const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -67,6 +68,7 @@ type Btn = HTMLButtonElement & { _active?: (e: Editor) => boolean; _enabled?: (e
 
 export interface CanvasTools {
   slash: SlashHook;
+  paste: PasteHooks;
   contextBar: HTMLElement;
   setEditor(e: Editor | null): void;
   detach(e: Editor): void;
@@ -268,6 +270,20 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     }
   };
 
+  // A paste always wins over the slash menu: the typed "/word" goes, the menu closes, and pasted
+  // text that happens to start with "/" doesn't open it.
+  const paste: PasteHooks = {
+    noteId: opts.noteId,
+    toast: opts.toast,
+    beforePaste(ed) {
+      if (menuMode === 'slash' && menuEditor === ed && slashRange) {
+        ed.view.dispatch(ed.state.tr.delete(slashRange.from, slashRange.to));
+      }
+      if (menuMode) closeMenu();
+      dismissedAt = ed.state.selection.$from.start();
+    }
+  };
+
   // ---------- floating toolbar on a text selection ----------
   const linkInput = h('input', { type: 'url', class: 'link-input', placeholder: 'https://…', 'aria-label': 'Link address', inputmode: 'url' });
   const linkApply = h('button', { type: 'button', class: 'primary' }, 'Apply');
@@ -405,13 +421,36 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     btn('Header row', 'Turn header row on or off', (e) => e.chain().focus().toggleHeaderRow().run(), 'tb'),
     btn('Delete table', 'Delete table', (e) => e.chain().focus().deleteTable().run(), 'tb danger')
   );
+  /**
+   * Left/right float the image so text sits beside it; a full-width image is narrowed to half so there's room.
+   * A float only wraps what comes after it, so when an image first starts floating it moves up above the
+   * paragraph or list just before it: the line typed before the picture ends up beside it.
+   */
+  const wrapImage = (e: Editor, align: 'left' | 'right') => {
+    const sel = e.state.selection;
+    if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'imageBlock') return;
+    const node = sel.node;
+    const width = Number(node.attrs.width) || 100;
+    const tr = e.state.tr.setNodeMarkup(sel.from, undefined, { ...node.attrs, align, width: width > 60 ? 50 : width });
+    if (node.attrs.align === 'center') {
+      const $pos = tr.doc.resolve(sel.from);
+      const prev = $pos.index() > 0 ? $pos.parent.child($pos.index() - 1) : null;
+      if (prev && ['paragraph', 'bulletList', 'orderedList'].includes(prev.type.name) && prev.textContent.trim()) {
+        const moved = tr.doc.nodeAt(sel.from)!;
+        const target = sel.from - prev.nodeSize;
+        tr.delete(sel.from, sel.from + moved.nodeSize).insert(target, moved);
+        tr.setSelection(NodeSelection.create(tr.doc, target));
+      }
+    }
+    e.view.dispatch(tr.scrollIntoView());
+  };
   const imageOps = h(
     'div',
     { class: 'ctx-group tb-align', role: 'group', 'aria-label': 'Image' },
     h('span', { class: 'ctx-label' }, 'Image'),
-    btn('Left', 'Align image left', (e) => e.chain().updateAttributes('imageBlock', { align: 'left' }).run(), 'tb', (e) => e.getAttributes('imageBlock').align === 'left'),
+    btn('Left · text beside', 'Align image left', (e) => wrapImage(e, 'left'), 'tb', (e) => e.getAttributes('imageBlock').align === 'left'),
     btn('Center', 'Center image', (e) => e.chain().updateAttributes('imageBlock', { align: 'center' }).run(), 'tb', (e) => e.getAttributes('imageBlock').align === 'center'),
-    btn('Right', 'Align image right', (e) => e.chain().updateAttributes('imageBlock', { align: 'right' }).run(), 'tb', (e) => e.getAttributes('imageBlock').align === 'right')
+    btn('Right · text beside', 'Align image right', (e) => wrapImage(e, 'right'), 'tb', (e) => e.getAttributes('imageBlock').align === 'right')
   );
   const removeBlock = btn('Remove', 'Remove selected image or chart', (e) => e.chain().focus().deleteSelection().run(), 'tb danger');
   const blockOps = h('div', { class: 'ctx-group', role: 'group', 'aria-label': 'Selected block' }, removeBlock);
@@ -503,6 +542,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
 
   return {
     slash,
+    paste,
     contextBar,
     setEditor(next) {
       if (editor !== next) {

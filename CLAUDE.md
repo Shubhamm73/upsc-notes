@@ -2,7 +2,7 @@
 
 Offline-first study-notes PWA for one UPSC aspirant (owner's brother) on a **Samsung Galaxy Tab S8**.
 Owner: Shubham (GitHub `Shubhamm73`). Live: https://shubhamm73.github.io/upsc-notes/ (GitHub Pages via Actions on push to `main`).
-Current version: **0.8.1 (UI-3 done: review & recall; backup/install reminders moved off the home screen)**. Next: **UI-4 — S Pen & finishing** (after the UI-3 gate: a week of real review sessions on the tablet, nothing lost).
+Current version: **0.8.2 (UI-3 done; 0.8.2: paste from anywhere, images beside text)**. Next: **UI-4 — S Pen & finishing** (after the UI-3 gate: a week of real review sessions on the tablet, nothing lost).
 
 ## Non-negotiable rules
 - **Local-only data.** Notes, words, images live in IndexedDB (Dexie) on the device. No server storage, no accounts, no login. GitHub Pages serves code only.
@@ -45,10 +45,10 @@ Routes: `#/` Today · `#/review` (`/insights`, `/words`, `/notes`) · `#/notes` 
 npm ci
 npm run build                       # tsc + vite build
 npx vite preview --port 4173 &      # then:
-for t in smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2 smoke-test-ui3; do python3 scripts/$t.py; done
+for t in smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2 smoke-test-ui3 smoke-test-paste; do python3 scripts/$t.py; done
 ```
 Python deps: playwright, pypdf, Pillow; `pdftotext` for the PDF test. In the cloud container pin `pip install playwright==1.56.0` (matches the pre-installed Chromium build 1194; newer pip versions look for a browser that isn't there).
-0.8.1 baseline: 8 suites, 300 checks, all passing; upgrade test 31 checks from 0.7.1 (09379bc) and from 0.8.0 (144da24): v2 → v3 keeps every note, word, image, quick insight and setting byte-for-byte, and a 0.7.1 backup imports intact (fresh and upgraded tablet, no duplicate cards).
+0.8.2 baseline: 9 suites, 327 checks, all passing; upgrade test from 0.8.1 (4f17a05): 31 checks. 0.8.1 baseline was: 8 suites, 300 checks; upgrade test 31 checks from 0.7.1 (09379bc) and from 0.8.0 (144da24): v2 → v3 keeps every note, word, image, quick insight and setting byte-for-byte, and a 0.7.1 backup imports intact (fresh and upgraded tablet, no duplicate cards).
 
 **Upgrade test** (run it every release, and above all for any schema change): an installed previous release
 updates to this build on one browser profile, nothing lost, nothing rewritten. It starts/stops its own servers on 4173.
@@ -66,6 +66,11 @@ M1 offline foundation · M2 rich editor (sections, lists incl. dash, tables, res
 **UI-2 (0.7.0)**: full-page writing canvas, templates, slash menu, floating toolbar, touch bar, focus mode, UPSC callouts, outline rail, GS answer meter, live key-line count, UI-2 motion. Details below.
 
 **0.8.1**: the owner asked for no warning banners over the home screen. The backup and install reminders now live only in More (the Backup & storage row turns into "No backup yet. Back up now." / "Last backup N days ago." in warning colour once there are notes and no backup for > 7 days) and in Backup & storage ("Last backup: never." in warning colour, Install section). The only app-wide banner left is "A new version is ready → Reload now": keep it, it's how updates reach the tablet (`registerType: 'prompt'`).
+
+**0.8.2** (owner's two fixes):
+- **Paste from anywhere** (`src/editor/paste.ts`, wired as `tools.paste` like `tools.slash`): a picture on the clipboard (screenshot, "Copy image") → stored image block; pictures inside pasted HTML come in as image blocks with a temporary `src`, are downloaded and stored like any image, then linked by id (the saved note never keeps a web address; a note closed mid-copy resumes on next open). A website that refuses the download (no CORS) → the picture is removed with a toast: "Long-press the picture → Copy image, then paste". Pasted h1 → Heading, h5/h6 → h4; plain text "- / – " → dash list, "• / * " → bullets, "1. / 1) " → numbered (Ctrl+Shift+V = plain, untouched). **A paste always beats the slash menu**: it deletes the typed "/word", closes the menu, and pasted "/text" never opens it. Dropped image files are inserted where dropped.
+- **Images beside text**: `align` left/right now **floats** the image (figure sized by `width` %, text, lists, tables, callouts beside it; `.rich` is `flow-root` so floats stay in their section); center = own row (as before). Choosing Left/Right narrows a >60 % picture to 50 % and, the first time it floats, moves it above the paragraph/list just before it, so "type a line, add a picture, tap Left" puts the line beside it. Below 520 px wide floats stack. PDF: a left/right picture prints in `columns` with the following text blocks that fit its height. Old notes with left/right images now wrap text (no data change). New `imageBlock` attr `src` (`rendered: false`, null except mid-copy): unindexed, no Dexie bump.
+- Gotcha: an empty line's box runs under a float, so a tap in its middle can land on the picture (selecting it; typing then replaces it, normal editor behaviour). Tests click the text beside the picture.
 
 **UI-3 (0.8.0)**: review cards for quick insights (Dexie v3), one Today queue, full-screen review session (insight / word / whole-note cards, Again / Hard / Easy, swipes, keys, undo, summary with rings), streak moments at 7/30/100 with a Settings switch, backup format 2. Details below.
 

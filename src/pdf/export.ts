@@ -5,6 +5,7 @@ import { collectImageIds } from '../editor/images';
 import { ymd } from '../lib/dates';
 import { groupInsights } from '../lib/insights';
 import { calloutKind } from '../lib/callouts';
+import { docToText } from '../lib/doc';
 
 /** A4 in points, with 48 pt margins. */
 const PAGE_W = 595.28;
@@ -101,8 +102,46 @@ interface Ctx {
   width: number; // available width at this nesting level
 }
 
+/** Rough printed height of a text block at a given width (10.5 pt Roboto, ~5.3 pt a character). */
+function textHeight(n: DocNode, width: number): number {
+  const lines = (t: string) => Math.max(1, Math.ceil((t.length * 5.3) / Math.max(40, width)));
+  if (n.type === 'bulletList' || n.type === 'orderedList') {
+    return (n.content ?? []).reduce((h, li) => h + lines(docToText(li)) * 13.5 + 2, 6);
+  }
+  return lines(docToText(n)) * 13.5 + (n.type === 'heading' ? 10 : 6);
+}
+
+const WRAPS = ['paragraph', 'heading', 'bulletList', 'orderedList'];
+
 function blocks(nodes: DocNode[] | undefined, ctx: Ctx): Content[] {
-  return (nodes ?? []).map((n) => block(n, ctx)).filter((c): c is Content => c !== null);
+  const list = nodes ?? [];
+  const out: Content[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const n = list[i];
+    const align = n.attrs?.align;
+    const img = n.type === 'imageBlock' ? ctx.images.get(String(n.attrs?.imageId)) : undefined;
+    // A left/right image with text after it prints side by side with that text, as on screen:
+    // the text blocks that fit next to the picture's height go in the column beside it.
+    if (img && (align === 'left' || align === 'right') && WRAPS.includes(list[i + 1]?.type ?? '')) {
+      const pct = Math.min(100, Math.max(10, Number(n.attrs?.width ?? 50)));
+      const w = Math.min((ctx.width * pct) / 100, ctx.width - 120);
+      const imgH = Math.min((w * img.h) / img.w, 640);
+      const textW = ctx.width - w - 14;
+      const beside: DocNode[] = [];
+      let used = 0;
+      while (WRAPS.includes(list[i + 1]?.type ?? '') && (beside.length === 0 || used < imgH)) {
+        used += textHeight(list[i + 1], textW);
+        beside.push(list[++i]);
+      }
+      const picture = { image: img.url, width: w, height: imgH };
+      const text = { width: '*', stack: blocks(beside, { ...ctx, width: textW }) };
+      out.push({ columns: align === 'left' ? [{ width: w, stack: [picture] }, text] : [text, { width: w, stack: [picture] }], columnGap: 14, margin: [0, 4, 0, 10] });
+      continue;
+    }
+    const c = block(n, ctx);
+    if (c !== null) out.push(c);
+  }
+  return out;
 }
 
 function block(n: DocNode, ctx: Ctx): Content | null {

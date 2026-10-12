@@ -932,3 +932,21 @@ body.reviewing main { padding: 0; }
   .rv-stats { grid-template-columns: minmax(0, 1fr); }
   .rv-undo span { display: none; }
 }
+
+/* ---------- 0.8.2: images beside text ---------- */
+/* Left/right images float: text, lists and other blocks sit beside them. Center stays on its own row. */
+.rich { display: flow-root; } /* a section contains its own floats */
+.img-block[data-align='left'], .img-block[data-align='right'] { display: block; margin: 0.25em 0 0.6em; max-width: 100%; }
+.img-block[data-align='left'] { float: left; margin-right: 1.1em; clear: left; }
+.img-block[data-align='right'] { float: right; margin-left: 1.1em; clear: right; }
+.img-block[data-align='center'] { clear: both; }
+/* Lists, tables, callouts and charts beside a float keep their own box (bullets don't slide under the picture). */
+.rich ul, .rich ol, .rich .tableWrapper, .rich blockquote { display: flow-root; }
+.rich .callout, .rich .chart-block { overflow: hidden; }
+/* On a phone-width column a floated picture would squeeze the text to a sliver: stack instead. */
+@media (max-width: 520px) {
+  .img-block[data-align='left'], .img-block[data-align='right'] { float: none; width: auto !important; margin: 0.6em 0; }
+  .img-block[data-align='left'] .img-frame, .img-block[data-align='right'] .img-frame { width: 100% !important; }
+}
+.img-frame.loading { min-height: 80px; border: 1px dashed var(--line); border-radius: 8px; }
+.img-frame.loading::after { content: 'Copying picture…'; color: var(--muted); line-height: 80px; display: block; text-align: center; }

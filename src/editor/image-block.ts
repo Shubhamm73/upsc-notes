@@ -15,8 +15,11 @@ export const ImageBlock = Node.create({
     return {
       imageId: { default: null },
       width: { default: 100 }, // percent of the text column, 10–100
+      // left / right: the image floats and text, lists and other blocks flow beside it; center: its own row
       align: { default: 'center' },
-      alt: { default: '' }
+      alt: { default: '' },
+      // Only while a picture pasted from the web is being copied onto the tablet (see paste.ts); then null.
+      src: { default: null, rendered: false }
     };
   },
 
@@ -31,6 +34,14 @@ export const ImageBlock = Node.create({
             width: Number(e.dataset.width) || 100,
             align: e.dataset.align || 'center'
           };
+        }
+      },
+      {
+        // Pictures inside pasted HTML (web pages, Word, Google Docs): copied into storage after the paste.
+        tag: 'img[src]',
+        getAttrs: (el) => {
+          const src = (el as HTMLImageElement).getAttribute('src') ?? '';
+          return /^(https?:|data:image\/)/i.test(src) ? { imageId: null, src, alt: (el as HTMLImageElement).alt || '' } : false;
         }
       }
     ];
@@ -68,10 +79,17 @@ export const ImageBlock = Node.create({
       fig.append(frame);
 
       let loadedId: string | null = null;
+      // A floated image (left/right) is sized on the figure so text can sit beside it; a centred one on the frame.
+      const setWidth = (pct: number, align: string) => {
+        const floated = align === 'left' || align === 'right';
+        fig.style.width = floated ? `${pct}%` : '';
+        frame.style.width = floated ? '100%' : `${pct}%`;
+      };
       const paint = (n: PMNode) => {
         fig.dataset.align = n.attrs.align;
-        frame.style.width = `${n.attrs.width}%`;
+        setWidth(n.attrs.width, n.attrs.align);
         sizeTag.textContent = `${n.attrs.width}%`;
+        frame.classList.toggle('loading', !n.attrs.imageId && !!n.attrs.src);
         if (n.attrs.imageId !== loadedId) {
           loadedId = n.attrs.imageId;
           img.removeAttribute('src');
@@ -99,7 +117,7 @@ export const ImageBlock = Node.create({
         handle.setPointerCapture(e.pointerId);
         const startX = e.clientX;
         const startPx = frame.getBoundingClientRect().width;
-        const columnPx = fig.getBoundingClientRect().width || 1;
+        const columnPx = (fig.parentElement ?? fig).getBoundingClientRect().width || 1;
         const align = current.attrs.align as Align;
         const factor = align === 'center' ? 2 : 1;
         const sign = align === 'right' ? -1 : 1;
@@ -108,7 +126,7 @@ export const ImageBlock = Node.create({
         const move = (ev: PointerEvent) => {
           const px = startPx + sign * factor * (ev.clientX - startX);
           pct = Math.round(Math.min(100, Math.max(10, (px / columnPx) * 100)));
-          frame.style.width = `${pct}%`;
+          setWidth(pct, align);
           sizeTag.textContent = `${pct}%`;
         };
         const up = () => {

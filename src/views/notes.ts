@@ -682,6 +682,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
           element: bodyEl,
           content: s.doc,
           slash: tools.slash,
+          paste: tools.paste,
           onChange: (doc) => {
             s.doc = doc;
             schedule();

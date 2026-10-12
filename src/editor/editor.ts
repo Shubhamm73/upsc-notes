@@ -10,6 +10,7 @@ import type { DocNode } from '../db';
 import { ImageBlock } from './image-block';
 import { ChartBlock } from './chart-block';
 import { Callout } from './callout';
+import { pasteExtension, type PasteHooks } from './paste';
 
 /** Bullet list with a style switch: dots (default) or dashes. */
 const StyledBulletList = BulletList.extend({
@@ -99,6 +100,7 @@ export function createEditor(opts: {
   onFocus: (editor: Editor) => void;
   onBlur?: (editor: Editor) => void;
   slash?: SlashHook;
+  paste?: PasteHooks;
   placeholder?: string;
   /** false = read-only (the review session's whole-note card). */
   editable?: boolean;
@@ -124,6 +126,7 @@ export function createEditor(opts: {
       ActiveBlock,
       MarkSweep,
       ...(opts.slash ? [slashExtension(opts.slash)] : []),
+      ...(opts.paste ? [pasteExtension(opts.paste)] : []),
       Placeholder.configure({ placeholder: opts.placeholder ?? 'Write here. Type / to add a list, table, chart or callout.' })
     ],
     editorProps: { attributes: { class: 'rich', spellcheck: 'true' } },
