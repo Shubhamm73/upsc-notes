@@ -46,6 +46,10 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
     toastEl
   );
 
+  // Sticky toolbars sit just under the top bar, whatever its height on this screen.
+  const header = root.querySelector('header')!;
+  new ResizeObserver(() => document.documentElement.style.setProperty('--bar-h', `${header.offsetHeight}px`)).observe(header);
+
   let toastTimer: number | undefined;
   let updateReady = false;
   let current: { name: string; view: View } | null = null;

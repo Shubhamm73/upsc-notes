@@ -1,6 +1,10 @@
 import { liveQuery, type Subscription } from 'dexie';
-import { db, newId, SUBJECTS, type Note } from '../db';
+import type { Editor } from '@tiptap/core';
+import { db, newId, SUBJECTS, type Note, type Section } from '../db';
 import { docToText, textToDoc } from '../lib/doc';
+import { createEditor } from '../editor/editor';
+import { createToolbar } from '../editor/toolbar';
+import { removeUnusedImages } from '../editor/images';
 import { nextReviewAfter, prettyDate, ymd } from '../lib/dates';
 import { h } from '../lib/h';
 import type { AppContext, View } from '../app';
@@ -44,6 +48,25 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   let retry: number | undefined;
   let chain: Promise<void> = Promise.resolve();
   let sub: Subscription | null = null;
+  const editors = new Map<string, Editor>();
+  const toolbar = createToolbar({ noteId: () => draft?.id ?? '', toast: ctx.toast });
+
+  function destroyEditors() {
+    for (const ed of editors.values()) {
+      toolbar.detach(ed);
+      ed.destroy();
+    }
+    editors.clear();
+  }
+
+  /** Called whenever a note is closed: saves, then clears out images nothing uses any more. */
+  async function closeNote() {
+    if (dirty) await save();
+    const closing = draft;
+    destroyEditors();
+    // Only tidy up when everything is safely saved; a failed save keeps all images.
+    if (closing && !dirty) void removeUnusedImages().catch(() => undefined);
+  }
 
   // ---------- layout ----------
   const listEl = h('ul', { class: 'note-list', id: 'note-list' });
@@ -184,6 +207,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   // ---------- editor ----------
   function renderEmptyEditor() {
     draft = null;
+    destroyEditors();
     editorEl.replaceChildren(
       h(
         'div',
@@ -207,15 +231,94 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     );
   }
 
+  function renderSections(d: Note, host: HTMLElement) {
+    destroyEditors();
+    if (!d.sections.length) d.sections.push({ id: newId(), heading: 'Notes', doc: textToDoc('') });
+    host.replaceChildren();
+    d.sections.forEach((s: Section, i: number) => {
+      const heading = h('input', {
+        class: 'section-heading',
+        'aria-label': `Section ${i + 1} heading`,
+        placeholder: 'Section heading',
+        value: s.heading
+      });
+      heading.addEventListener('input', () => ((s.heading = heading.value), schedule()));
+
+      const move = (dir: -1 | 1) => {
+        const j = i + dir;
+        [d.sections[i], d.sections[j]] = [d.sections[j], d.sections[i]];
+        schedule();
+        renderSections(d, host);
+      };
+      const up = h('button', { type: 'button', class: 'sec-btn', 'aria-label': 'Move section up', disabled: i === 0 }, '↑');
+      const down = h('button', { type: 'button', class: 'sec-btn', 'aria-label': 'Move section down', disabled: i === d.sections.length - 1 }, '↓');
+      up.addEventListener('click', () => move(-1));
+      down.addEventListener('click', () => move(1));
+
+      // Two-tap delete: the first tap arms it for 4 seconds.
+      const del = h('button', { type: 'button', class: 'sec-btn danger', disabled: d.sections.length === 1 }, 'Delete section');
+      let armed: number | undefined;
+      del.addEventListener('click', () => {
+        if (!armed) {
+          del.textContent = 'Tap again to delete';
+          del.classList.add('armed');
+          armed = window.setTimeout(() => {
+            armed = undefined;
+            del.textContent = 'Delete section';
+            del.classList.remove('armed');
+          }, 4000);
+          return;
+        }
+        clearTimeout(armed);
+        d.sections.splice(i, 1);
+        schedule();
+        renderSections(d, host);
+        ctx.toast('Section deleted.');
+      });
+
+      const bodyEl = h('div', { class: 'section-body', 'data-section': s.id });
+      host.append(
+        h(
+          'section',
+          { class: 'note-section' },
+          h('div', { class: 'section-head' }, heading, h('div', { class: 'sec-actions' }, up, down, del)),
+          bodyEl
+        )
+      );
+      const ed = createEditor({
+        element: bodyEl,
+        content: s.doc,
+        onChange: (doc) => {
+          s.doc = doc;
+          schedule();
+        },
+        onFocus: (e) => toolbar.setEditor(e)
+      });
+      editors.set(s.id, ed);
+      if (i === 0) toolbar.setEditor(ed);
+    });
+
+    const add = h('button', { type: 'button', class: 'add-section', id: 'add-section' }, '+ Add section');
+    add.addEventListener('click', () => {
+      const s: Section = { id: newId(), heading: '', doc: textToDoc('') };
+      d.sections.push(s);
+      schedule();
+      renderSections(d, host);
+      const inputs = host.querySelectorAll<HTMLInputElement>('.section-heading');
+      inputs[inputs.length - 1]?.focus();
+    });
+    host.append(add);
+  }
+
   function renderEditor(n: Note) {
+    destroyEditors();
     draft = structuredClone(n);
     const d = draft;
     const title = h('input', { id: 'f-title', placeholder: 'e.g. Separation of powers', value: d.title });
     const subject = h('select', { id: 'f-subject' }, ...SUBJECTS.map((s) => h('option', { value: s }, s)));
     subject.value = d.subject;
     const topic = h('input', { id: 'f-topic', placeholder: 'e.g. Judiciary', value: d.topic });
-    const body = h('textarea', { id: 'f-body', rows: 12 });
-    body.value = docToText(d.sections[0]?.doc);
+    const sectionsHost = h('div', { class: 'sections', id: 'sections' });
     const explain = h('textarea', { id: 'f-explain', rows: 6 });
     explain.value = d.explain;
     const connect = h('textarea', { id: 'f-connect', rows: 5 });
@@ -224,11 +327,6 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     title.addEventListener('input', () => ((d.title = title.value), schedule()));
     subject.addEventListener('change', () => ((d.subject = subject.value), schedule()));
     topic.addEventListener('input', () => ((d.topic = topic.value), schedule()));
-    body.addEventListener('input', () => {
-      if (!d.sections.length) d.sections.push({ id: newId(), heading: 'Notes', doc: textToDoc('') });
-      d.sections[0].doc = textToDoc(body.value);
-      schedule();
-    });
     explain.addEventListener('input', () => ((d.explain = explain.value), schedule()));
     connect.addEventListener('input', () => ((d.connect = connect.value), schedule()));
 
@@ -259,20 +357,22 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         back,
         field('Title', null, title),
         h('div', { class: 'grid2' }, field('Subject', null, subject), field('Topic', null, topic)),
-        field('Notes', 'Rich formatting, tables, images and charts arrive in the next update.', body),
+        h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Notes'), toolbar.el, sectionsHost),
         field('Explain it in your own words', 'Write it as if teaching a friend who has never heard of it.', explain),
         field('Connect it', 'Where else does this appear in the syllabus? How would it change an answer?', connect),
         h('div', { class: 'review' }, reviewInfo, reviewBtn)
       )
     );
+    renderSections(d, sectionsHost);
     if (isNew) title.focus();
     renderList();
   }
 
   async function open(id: string | null) {
-    if (dirty) await save();
-    else if (isNew && draft && id !== draft.id) isNew = false; // discard an untouched new note
     document.body.classList.toggle('editing', !!id);
+    if (id && id !== 'new' && draft?.id === id) return; // already open (e.g. after the first save renamed the URL)
+    await closeNote();
+    if (isNew && draft && id !== draft.id) isNew = false; // an untouched new note is simply dropped
     if (!id) {
       renderEmptyEditor();
       renderList();
@@ -284,10 +384,10 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       ctx.status('New note');
       return;
     }
-    if (draft?.id === id) return;
     isNew = false;
     const n = await db.notes.get(id);
     if (!n || n.deletedAt) {
+      draft = null;
       editorEl.replaceChildren(
         h(
           'div',
@@ -311,7 +411,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       if (dirty) await save();
     },
     async destroy() {
-      if (dirty) await save();
+      await closeNote();
       clearTimeout(retry);
       sub?.unsubscribe();
       document.body.classList.remove('editing');
