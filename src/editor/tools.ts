@@ -1,10 +1,12 @@
 import type { Editor } from '@tiptap/core';
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
+import type { Node as PMNode } from '@tiptap/pm/model';
 import { h } from '../lib/h';
 import { icon } from '../lib/icons';
-import { CALLOUT_KINDS } from '../lib/callouts';
+import { CALLOUT_KINDS, PYQ_MARKS, PYQ_PAPERS } from '../lib/callouts';
 import { addImage } from './images';
-import { calloutKindAt, removeCallout, setCallout } from './callout';
+import { calloutAttrsAt, calloutKindAt, removeCallout, setCallout, setPyqDetails } from './callout';
+import { addLineBy, besidePicture, isBelowPicture, setBelowPicture } from './flow';
 import { CALLOUT_ITEMS, INSERT_ITEMS, cycleList, filterItems, insertBlocks, type InsertEnv, type InsertItem } from './insert';
 import { sweepKey, type SlashHook } from './editor';
 import type { PasteHooks } from './paste';
@@ -75,10 +77,20 @@ export interface CanvasTools {
   onBlur(e: Editor): void;
   openInsert(anchor: DOMRect): void;
   closeMenus(): boolean;
+  /** Repaints the tools (after Undo / Redo changed what they can do). */
+  refresh(): void;
   destroy(): void;
 }
 
-export function createCanvasTools(opts: { noteId: () => string; toast: (t: string) => void; onDone: () => void }): CanvasTools {
+/** Note-wide Undo / Redo (text, sections, title …), owned by the note view. */
+export interface UndoHooks {
+  undo(): void;
+  redo(): void;
+  canUndo(): boolean;
+  canRedo(): boolean;
+}
+
+export function createCanvasTools(opts: { noteId: () => string; toast: (t: string) => void; onDone: () => void; history: UndoHooks }): CanvasTools {
   let editor: Editor | null = null;
   const buttons: Btn[] = [];
 
@@ -419,8 +431,34 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     btn('− Row', 'Delete row', (e) => e.chain().focus().deleteRow().run(), 'tb'),
     btn('− Column', 'Delete column', (e) => e.chain().focus().deleteColumn().run(), 'tb'),
     btn('Header row', 'Turn header row on or off', (e) => e.chain().focus().toggleHeaderRow().run(), 'tb'),
+    btn('Fit width', 'Fit the table to the page width', (e) => fitTable(e), 'tb', undefined, (e) => !!tableAt(e) && hasColWidths(tableAt(e)!.node)),
     btn('Delete table', 'Delete table', (e) => e.chain().focus().deleteTable().run(), 'tb danger')
   );
+  /** The table around the caret. */
+  const tableAt = (e: Editor) => {
+    const { $from } = e.state.selection;
+    for (let d = $from.depth; d > 0; d--) if ($from.node(d).type.name === 'table') return { pos: $from.before(d), node: $from.node(d) };
+    return null;
+  };
+  const hasColWidths = (table: PMNode) => {
+    let found = false;
+    table.descendants((n) => {
+      if (Array.isArray(n.attrs.colwidth) && n.attrs.colwidth.some(Boolean)) found = true;
+      return !found;
+    });
+    return found;
+  };
+  /** Columns dragged to a width keep it; this hands them back to the page width (equal shares). */
+  const fitTable = (e: Editor) => {
+    const t = tableAt(e);
+    if (!t) return;
+    const tr = e.state.tr;
+    t.node.descendants((n, pos) => {
+      if (n.attrs.colwidth) tr.setNodeMarkup(t.pos + 1 + pos, undefined, { ...n.attrs, colwidth: null });
+    });
+    e.view.dispatch(tr);
+  };
+
   /**
    * Left/right float the image so text sits beside it; a full-width image is narrowed to half so there's room.
    * A float only wraps what comes after it, so when an image first starts floating it moves up above the
@@ -439,29 +477,100 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
         const moved = tr.doc.nodeAt(sel.from)!;
         const target = sel.from - prev.nodeSize;
         tr.delete(sel.from, sel.from + moved.nodeSize).insert(target, moved);
+        // the line that now follows the picture sits beside it, even if it was set to start below
+        if (prev.attrs.clear) tr.setNodeMarkup(target + moved.nodeSize, undefined, { ...prev.attrs, clear: null });
         tr.setSelection(NodeSelection.create(tr.doc, target));
       }
     }
     e.view.dispatch(tr.scrollIntoView());
   };
+  const openCrop = (e: Editor) => {
+    const sel = e.state.selection;
+    if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'imageBlock') return;
+    (e.view.nodeDOM(sel.from) as HTMLElement | null)?.dispatchEvent(new CustomEvent('open-crop'));
+  };
+  // Caption: written when the box is left (or Enter), so one caption is one Undo step.
+  const captionInput = h('input', { type: 'text', class: 'ctx-input caption-input', id: 'image-caption', placeholder: 'Caption', 'aria-label': 'Picture caption', maxlength: 200 });
+  let captionFor: { e: Editor; pos: number; imageId: unknown } | null = null;
+  captionInput.addEventListener('focus', () => {
+    const e = editor;
+    const sel = e?.state.selection;
+    captionFor = e && sel instanceof NodeSelection && sel.node.type.name === 'imageBlock' ? { e, pos: sel.from, imageId: sel.node.attrs.imageId } : null;
+  });
+  const commitCaption = () => {
+    const t = captionFor;
+    if (!t || t.e.isDestroyed) return;
+    const node = t.e.state.doc.nodeAt(t.pos);
+    if (!node || node.type.name !== 'imageBlock' || node.attrs.imageId !== t.imageId) return;
+    const caption = captionInput.value.trim();
+    if (caption === (node.attrs.caption ?? '')) return;
+    t.e.view.dispatch(t.e.state.tr.setNodeMarkup(t.pos, undefined, { ...node.attrs, caption }));
+  };
+  captionInput.addEventListener('change', commitCaption);
+  captionInput.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter') return;
+    ev.preventDefault();
+    commitCaption();
+    const t = captionFor;
+    if (t && !t.e.isDestroyed && t.e.state.doc.nodeAt(t.pos)?.type.name === 'imageBlock') {
+      t.e.view.dispatch(t.e.state.tr.setSelection(NodeSelection.create(t.e.state.doc, t.pos)));
+      t.e.commands.focus();
+    }
+  });
+
   const imageOps = h(
     'div',
     { class: 'ctx-group tb-align', role: 'group', 'aria-label': 'Image' },
     h('span', { class: 'ctx-label' }, 'Image'),
     btn('Left · text beside', 'Align image left', (e) => wrapImage(e, 'left'), 'tb', (e) => e.getAttributes('imageBlock').align === 'left'),
     btn('Center', 'Center image', (e) => e.chain().updateAttributes('imageBlock', { align: 'center' }).run(), 'tb', (e) => e.getAttributes('imageBlock').align === 'center'),
-    btn('Right · text beside', 'Align image right', (e) => wrapImage(e, 'right'), 'tb', (e) => e.getAttributes('imageBlock').align === 'right')
+    btn('Right · text beside', 'Align image right', (e) => wrapImage(e, 'right'), 'tb', (e) => e.getAttributes('imageBlock').align === 'right'),
+    btn(h('span', { class: 'tb-ic' }, icon('crop', 18), 'Crop & shape'), 'Crop and shape', (e) => openCrop(e), 'tb'),
+    btn('+ Line above', 'Add a line above the picture', (e) => addLineBy(e, 'above'), 'tb'),
+    btn('+ Line below', 'Add a line below the picture', (e) => addLineBy(e, 'below'), 'tb'),
+    captionInput
   );
   const removeBlock = btn('Remove', 'Remove selected image or chart', (e) => e.chain().focus().deleteSelection().run(), 'tb danger');
   const blockOps = h('div', { class: 'ctx-group', role: 'group', 'aria-label': 'Selected block' }, removeBlock);
+  // PYQ details: year, paper, marks (written when chosen, or when the year box is left).
+  const pyqYear = h('input', { type: 'text', class: 'ctx-input pyq-year', id: 'pyq-year', inputmode: 'numeric', maxlength: 4, placeholder: 'Year', 'aria-label': 'PYQ year' });
+  const pyqPaper = h('select', { class: 'ctx-select', id: 'pyq-paper', 'aria-label': 'PYQ paper' }, h('option', { value: '' }, 'Paper'), ...PYQ_PAPERS.map((p) => h('option', { value: p }, p)));
+  const pyqMarks = h('select', { class: 'ctx-select', id: 'pyq-marks', 'aria-label': 'PYQ marks' }, h('option', { value: '' }, 'Marks'), ...PYQ_MARKS.map((m) => h('option', { value: m }, `${m} marks`)));
+  const pyqFields = h('span', { class: 'pyq-fields', hidden: true }, pyqYear, pyqPaper, pyqMarks);
+  let pyqFor: Editor | null = null;
+  for (const el of [pyqYear, pyqPaper, pyqMarks]) el.addEventListener('focus', () => (pyqFor = editor));
+  const commitPyq = () => {
+    const e = pyqFor ?? editor;
+    if (!e || e.isDestroyed) return;
+    const year = pyqYear.value.replace(/\D/g, '').slice(0, 4);
+    pyqYear.value = year;
+    const a = calloutAttrsAt(e);
+    if (!a || a.kind !== 'pyq') return;
+    if ((a.year ?? '') === year && (a.paper ?? '') === pyqPaper.value && (a.marks ?? '') === pyqMarks.value) return;
+    setPyqDetails(e, { year, paper: pyqPaper.value, marks: pyqMarks.value });
+  };
+  pyqYear.addEventListener('change', commitPyq);
+  pyqYear.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter') return;
+    ev.preventDefault();
+    commitPyq();
+    (pyqFor ?? editor)?.commands.focus();
+  });
+  pyqPaper.addEventListener('change', commitPyq);
+  pyqMarks.addEventListener('change', commitPyq);
   const calloutOps = h(
     'div',
     { class: 'ctx-group tb-callout', role: 'group', 'aria-label': 'Callout' },
     h('span', { class: 'ctx-label' }, 'Callout'),
     ...CALLOUT_KINDS.map((k) => btn(k.label, `${k.label} callout`, (e) => setCallout(e, k.id), 'tb', (e) => calloutKindAt(e) === k.id)),
-    btn('Remove box', 'Remove callout box, keep the text', (e) => removeCallout(e), 'tb danger')
+    btn('Remove box', 'Remove callout box, keep the text', (e) => removeCallout(e), 'tb danger'),
+    pyqFields
   );
-  const contextBar = h('div', { class: 'ctxbar', id: 'ctxbar', role: 'toolbar', 'aria-label': 'Block tools', hidden: true }, tableOps, imageOps, blockOps, calloutOps);
+  // A line beside a floated picture can start below it instead (and back).
+  const belowBtn = btn('↓ Below picture', 'Start this line below the picture', (e) => setBelowPicture(e, true), 'tb');
+  const besideBtn = btn('↑ Beside picture', 'Put this line back beside the picture', (e) => setBelowPicture(e, false), 'tb');
+  const flowOps = h('div', { class: 'ctx-group tb-flow', role: 'group', 'aria-label': 'Text and picture' }, h('span', { class: 'ctx-label' }, 'Text'), belowBtn, besideBtn);
+  const contextBar = h('div', { class: 'ctxbar', id: 'ctxbar', role: 'toolbar', 'aria-label': 'Block tools', hidden: true }, tableOps, imageOps, blockOps, flowOps, calloutOps);
 
   // ---------- touch bar (portrait, above the keyboard) ----------
   const insertBtn = h('button', { type: 'button', class: 'tbar-btn', 'aria-label': 'Insert', id: 'tbar-insert' }, icon('plus', 24));
@@ -485,7 +594,8 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     insertBtn,
     btn(h('span', { class: 'mark-chip' }, 'Mark'), 'Mark (highlight)', (e) => toggleMark(e), 'tbar-btn', (e) => e.isActive('highlight')),
     btn(icon('list', 24), 'List: bullets, dashes, numbers, off', (e) => cycleList(e), 'tbar-btn', (e) => e.isActive('bulletList') || e.isActive('orderedList')),
-    btn(icon('undo', 24), 'Undo', (e) => e.chain().focus().undo().run(), 'tbar-btn', undefined, (e) => e.can().undo()),
+    btn(icon('undo', 24), 'Undo', () => opts.history.undo(), 'tbar-btn', undefined, () => opts.history.canUndo()),
+    btn(icon('redo', 24), 'Redo', () => opts.history.redo(), 'tbar-btn', undefined, () => opts.history.canRedo()),
     doneBtn
   );
 
@@ -513,8 +623,22 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
       tableOps.hidden = !inTable(e);
       imageOps.hidden = !selectedBlock(e, 'imageBlock');
       blockOps.hidden = !selectedBlock(e);
-      calloutOps.hidden = !calloutKindAt(e);
-      contextBar.hidden = tableOps.hidden && imageOps.hidden && blockOps.hidden && calloutOps.hidden;
+      const kind = calloutKindAt(e);
+      calloutOps.hidden = !kind;
+      pyqFields.hidden = kind !== 'pyq';
+      if (kind === 'pyq') {
+        const a = calloutAttrsAt(e)!;
+        if (document.activeElement !== pyqYear) pyqYear.value = String(a.year ?? '');
+        pyqPaper.value = String(a.paper ?? '');
+        pyqMarks.value = String(a.marks ?? '');
+      }
+      if (!imageOps.hidden && document.activeElement !== captionInput) captionInput.value = String(e.getAttributes('imageBlock').caption ?? '');
+      const below = isBelowPicture(e);
+      const beside = !below && e.state.selection.empty && besidePicture(e);
+      belowBtn.hidden = !beside;
+      besideBtn.hidden = !below;
+      flowOps.hidden = !below && !beside;
+      contextBar.hidden = tableOps.hidden && imageOps.hidden && blockOps.hidden && calloutOps.hidden && flowOps.hidden;
     } else {
       contextBar.hidden = true;
     }
@@ -578,6 +702,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
       }, 0);
     },
     openInsert,
+    refresh: () => sync(),
     closeMenus() {
       if (linkFor) {
         closeLinkRow();

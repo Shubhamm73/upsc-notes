@@ -2,7 +2,7 @@
 
 Offline-first study-notes PWA for one UPSC aspirant (owner's brother) on a **Samsung Galaxy Tab S8**.
 Owner: Shubham (GitHub `Shubhamm73`). Live: https://shubhamm73.github.io/upsc-notes/ (GitHub Pages via Actions on push to `main`).
-Current version: **0.8.2 (UI-3 done; 0.8.2: paste from anywhere, images beside text)**. Next: **UI-4 — S Pen & finishing** (after the UI-3 gate: a week of real review sessions on the tablet, nothing lost).
+Current version: **0.8.3 (UI-3 done; 0.8.3: full-width notes, PYQ callout, note-wide Undo/Redo, text on every side of a picture, Crop & shape)**. Next: **UI-4 — S Pen & finishing** (after the UI-3 gate: a week of real review sessions on the tablet, nothing lost).
 
 ## Non-negotiable rules
 - **Local-only data.** Notes, words, images live in IndexedDB (Dexie) on the device. No server storage, no accounts, no login. GitHub Pages serves code only.
@@ -30,11 +30,13 @@ src/views/appearance.ts Settings: theme (system/day/night) + 6 font styles
 src/views/more.ts      More menu;  src/views/search.ts  Ctrl+K overlay
 src/editor/            editor.ts (TipTap setup, dash-list attr, active-block + mark-sweep decorations, slash hook)
                        tools.ts (slash/+ insert menu, floating toolbar + link box, context bar, touch bar, highlight sweep)
-                       insert.ts (insert items + list/block helpers), callout.ts (callout node), image-block.ts, chart-block.ts, images.ts
+                       insert.ts (insert items + list/block helpers), callout.ts (callout node, PYQ details), image-block.ts, chart-block.ts, images.ts
+                       paste.ts, flow.ts (text on every side of a picture), crop.ts (Crop & shape screen), history.ts (note-wide Undo/Redo)
 src/pdf/               export.ts (section / note / all → pdfmake), run.ts
 src/lib/               backup, storage (persist), dates (review intervals 1,3,7,16,35), insights (+ key lines with paragraph context), trash, prefs, activity (streak, milestones, last note),
                        schedule (steps, Again/Hard/Easy), cards (pure card sync, used by the Dexie upgrade), review (queue, session, rateItem, reviewNote), rings (subject rings),
-                       subjects (colour vars), icons, h (DOM builder), doc (text, search text, word count, callouts), callouts, templates, menu (popover)
+                       subjects (colour vars), icons, h (DOM builder), doc (text, search text, word count, callouts, captions), callouts, templates, menu (popover),
+                       shapes (picture shapes: CSS clip-path, canvas path for the PDF, crop maths)
 scripts/smoke-test*.py Playwright checks (run against `npx vite preview --port 4173`)
 ```
 
@@ -45,10 +47,11 @@ Routes: `#/` Today · `#/review` (`/insights`, `/words`, `/notes`) · `#/notes` 
 npm ci
 npm run build                       # tsc + vite build
 npx vite preview --port 4173 &      # then:
-for t in smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2 smoke-test-ui3 smoke-test-paste; do python3 scripts/$t.py; done
+for t in smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2 smoke-test-ui3 smoke-test-paste smoke-test-canvas2; do python3 scripts/$t.py; done
 ```
 Python deps: playwright, pypdf, Pillow; `pdftotext` for the PDF test. In the cloud container pin `pip install playwright==1.56.0` (matches the pre-installed Chromium build 1194; newer pip versions look for a browser that isn't there).
-0.8.2 baseline: 9 suites, 327 checks, all passing; upgrade test from 0.8.1 (4f17a05): 31 checks. 0.8.1 baseline was: 8 suites, 300 checks; upgrade test 31 checks from 0.7.1 (09379bc) and from 0.8.0 (144da24): v2 → v3 keeps every note, word, image, quick insight and setting byte-for-byte, and a 0.7.1 backup imports intact (fresh and upgraded tablet, no duplicate cards).
+0.8.3 baseline: 10 suites, 406 checks, all passing (smoke-test-canvas2 adds 79); upgrade test from 0.8.2 (3be8bd7): 31 checks.
+0.8.2 baseline was: 9 suites, 327 checks, all passing; upgrade test from 0.8.1 (4f17a05): 31 checks. 0.8.1 baseline was: 8 suites, 300 checks; upgrade test 31 checks from 0.7.1 (09379bc) and from 0.8.0 (144da24): v2 → v3 keeps every note, word, image, quick insight and setting byte-for-byte, and a 0.7.1 backup imports intact (fresh and upgraded tablet, no duplicate cards).
 
 **Upgrade test** (run it every release, and above all for any schema change): an installed previous release
 updates to this build on one browser profile, nothing lost, nothing rewritten. It starts/stops its own servers on 4173.
@@ -72,6 +75,14 @@ M1 offline foundation · M2 rich editor (sections, lists incl. dash, tables, res
 - **Images beside text**: `align` left/right now **floats** the image (figure sized by `width` %, text, lists, tables, callouts beside it; `.rich` is `flow-root` so floats stay in their section); center = own row (as before). Choosing Left/Right narrows a >60 % picture to 50 % and, the first time it floats, moves it above the paragraph/list just before it, so "type a line, add a picture, tap Left" puts the line beside it. Below 520 px wide floats stack. PDF: a left/right picture prints in `columns` with the following text blocks that fit its height. Old notes with left/right images now wrap text (no data change). New `imageBlock` attr `src` (`rendered: false`, null except mid-copy): unindexed, no Dexie bump.
 - Gotcha: an empty line's box runs under a float, so a tap in its middle can land on the picture (selecting it; typing then replaces it, normal editor behaviour). Tests click the text beside the picture.
 
+**0.8.3** (owner's five asks, all recommendations accepted on 13 Oct 2026):
+- **Full-width notes**: `.canvas-col` has no max width (it was 31em ≈ 72 chars); Settings → Note width and the note's ⋯ menu offer **Comfortable** (40em ≈ 90 chars). `html[data-width]`, localStorage `upsc.width`, per device. The outline rail folds away (header button ≥ 1000 px, ⋯ menu; `html[data-outline]`, `upsc.outline`). PDFs never depended on screen width (picture widths are % of the column, A4 in the PDF). A picture is never taller than 75vh on screen (`--ratio` set on load). Tables dragged to pixel column widths get **Fit width** (clears `colwidth`); the PDF now prints dragged columns in the same proportions (was equal shares).
+- **PYQ callout** (`kind: 'pyq'`, violet `--co-pyq`): optional `year` / `paper` / `marks` attrs (unindexed) edited in the callout tools, shown in the label ("PYQ · 2019 · GS2 · 15 marks", `calloutLabel()`), searched by Ctrl+K, printed in the PDF. Topic sheet template now ends with a **PYQs** section (new notes only).
+- **Note-wide Undo / Redo** (`editor/history.ts NoteHistory`): header ↶ ↷ at every width, touch bar Undo + Redo, Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y anywhere in the note (captured on `document`, so the editors' and text boxes' own undo never runs). One ordered stack over: each section editor's history (an entry = "next undo step of section X", kept in step via `undoDepth` / `isHistoryTransaction`), fields (title, topic, subject, headings, own words, connections, font; typing within 1.5 s merges), and ops (add / delete / move section, template change). Sections are now **built once per note and moved, not rebuilt**, so a move keeps every editor's history; a deleted section is parked (editor alive) until the note closes, so Undo brings it back with its own history. History ends when the note closes. Mark reviewed is not undoable (it's a review, not an edit).
+- **Text on every side of a picture** (`editor/flow.ts PictureFlow`): typing (or an Android keyboard's composition) on a selected picture/chart starts a new line after it instead of replacing it; **+ Line above / + Line below** in the image tools; a block with `clear: true` (global attr on paragraph, heading, lists, blockquote, callout, hr; `data-clear`) starts below floated pictures: **Enter on an empty line beside a picture** sets it, or "↓ Below picture" / "↑ Beside picture" in the tools; headings always clear. `clear: null` is stripped from saved JSON (`tidy()` in editor.ts) so paragraphs keep their old shape. The PDF stops the "beside" column at a cleared block or heading. Pictures are now allowed **inside callouts** (`.callout-body` is flow-root).
+- **Crop & shape** (`editor/crop.ts`, double-tap a picture or the image tools): full-screen; drag the box, its 8 handles (44 px), pinch / slider / wheel to zoom; shapes Original, Rounded, Circle (square lock), Oval, Triangle, Rhombus, Pentagon, Hexagon, Octagon, Star, Parallelogram, Arch; sizes Free / Square / 4:3 / 3:4 / 16:9 / Original; Turn 90°, Mirror, Reset. **Non-destructive**: new `imageBlock` attrs `crop` ({x,y,w,h} fractions of the turned picture, null = all), `shape`, `rotate`, `flip`, `caption`; the stored image never changes. Screen: `.img-clip` (clip-path + aspect-ratio) > `.img-stage` > img (`placeRotated`). A floated non-rect shape without caption sets `shape-outside` so text follows its edge. PDF: `shapePicture()` draws crop/turn/mirror/shape on a canvas (PNG with transparency, JPEG for rect) once per distinct setting; captions print under the picture. Caption is searchable.
+- No Dexie bump: everything new is an unindexed attr inside `section.doc`; old notes open unchanged (upgrade test). Older builds ignore the new attrs (they'd show a PYQ as an Article box and pictures uncropped).
+
 **UI-3 (0.8.0)**: review cards for quick insights (Dexie v3), one Today queue, full-screen review session (insight / word / whole-note cards, Again / Hard / Easy, swipes, keys, undo, summary with rings), streak moments at 7/30/100 with a Settings switch, backup format 2. Details below.
 
 ## UI-3 as built (things to know)
@@ -88,11 +99,11 @@ M1 offline foundation · M2 rich editor (sections, lists incl. dash, tables, res
 
 ## UI-2 as built (things to know)
 - **Data**: `note.template?` (`gs-answer` | `topic-sheet` | `current-affairs`; absent = Blank) and the `callout` node (`attrs.kind`: article, case, data, example, wayforward; content = paragraphs/lists) inside `section.doc`. Neither is indexed, so **no Dexie version bump**; old notes and old backups load unchanged, and `importBackup` passes both through. Opening a note never rewrites it (tested). The next real schema change (UI-3 review state) still needs a new Dexie version + upgrade + import mapping.
-- **Layout**: an open note is full-page at every width (`.notes-layout.is-notes`; vocab still uses the old two-pane rules). Header row: ← Notes · subject·topic · key-line pill · meter (GS answer only) · save state · Focus · **Mark reviewed** (in the header per the UI-0 mockup, not tucked away) · ⋯. Context bar (table / image / chart / callout tools) is a second header row that only appears in context. Column `max-width: 31em` ≈ 72 characters (`ch` measures "0" and gave ~85). `40vh` bottom padding so the outline can jump to the last section.
+- **Layout**: an open note is full-page at every width (`.notes-layout.is-notes`; vocab still uses the old two-pane rules). Header row: ← Notes · subject·topic · key-line pill · meter (GS answer only) · save state · Focus · **Mark reviewed** (in the header per the UI-0 mockup, not tucked away) · ⋯. Context bar (table / image / chart / callout tools) is a second header row that only appears in context. Column `max-width: 31em` ≈ 72 characters (`ch` measures "0" and gave ~85); since 0.8.3 full width by default, 40em = Comfortable. `40vh` bottom padding so the outline can jump to the last section.
 - **Tucked away**: "Reflect and settings" `<details>` at the bottom holds Explain, Connect, font style, note PDF, Move to trash. The outline's Reflect links open it.
 - **Floating toolbar** (B I U Mark Link + inline link box): above the selection with a mouse, **below it (+34 px) on touch/pen** so Android's copy/paste menu doesn't cover it (`isTouchLike()` = last pointerType, else `(pointer: coarse)`).
 - **Slash menu**: `/` at the start of an empty paragraph; filters by name then keywords; `/case` etc. jump straight to a callout kind; "Callout" opens a kind submenu; Sketch is a "coming soon" toast (UI-4). Esc keeps the typed text and doesn't reopen until the line changes.
-- **Touch bar** (`(pointer: coarse) and (orientation: portrait)`, while an editor has focus): + (same insert list, plus Indent/Outdent in lists), Mark, List (bullets → dashes → numbers → off), Undo, Done. Rides above the keyboard via `visualViewport`; hides the bottom nav while shown. Landscape touch has no Undo button (spec); Ctrl+Z on the keyboard cover.
+- **Touch bar** (`(pointer: coarse) and (orientation: portrait)`, while an editor has focus): + (same insert list, plus Indent/Outdent in lists), Mark, List (bullets → dashes → numbers → off), Undo, Redo (0.8.3), Done. Rides above the keyboard via `visualViewport`; hides the bottom nav while shown. Landscape touch: Undo / Redo are in the note header (0.8.3); Ctrl+Z on the keyboard cover.
 - **Outline rail** (≥1000 px wide): tap = jump; long-press 450 ms then drag = reorder; ⋯ per section = Collapse, Move up/down, **Export section as PDF**, Delete (two taps). Portrait: the same ⋯ menu is on each section heading. Collapse state is screen-only, not saved.
 - **Focus mode**: Ctrl + . or the Focus button; Esc or "Exit focus" leaves. Esc/Ctrl+. are handled on `document` in the **capture** phase (the editor swallows Esc otherwise): one press closes a menu first, then focus mode.
 - **Search**: `noteSearchText()` adds "<Kind> callout" for every callout, so Ctrl+K "case" lists notes with Case callouts first, showing the callout text. Highlights inside callouts count as key lines / quick insights.
@@ -145,7 +156,8 @@ Open note: card expands to page 240 ms · Save: dot pulse then ✓ 160 ms · Hig
 - The earliest artifact version (server-stored notes) is obsolete — never give it to the brother.
 
 ## Known limits
-- PDF engine can't shape complex scripts (Hindi dropped anyway). PDF table columns are equal width.
+- PDF engine can't shape complex scripts (Hindi dropped anyway). PDF table columns are equal width unless dragged to widths on screen (then proportional).
+- Text follows a picture's shape on screen only; the PDF wraps beside its box. Undo history is per open note (ends when the note closes).
 - Precache ≈ 2.98 MB (pdfmake + fonts).
 - Subject rings count notes only (reviewed and not overdue), so insight and word cards don't move them; the summary rings only change when a note card is rated.
 - Rating a note (or Mark reviewed) changes its `updatedAt`, so Today's "Continue writing" may show it as "Edited just now" when no note was opened since.

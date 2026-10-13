@@ -10,7 +10,8 @@ import { extractInsights, groupInsights, sectionKeyLines } from '../lib/insights
 import { logReviewDay, milestoneText, setLastNote } from '../lib/activity';
 import { reviewNote } from '../lib/review';
 import { subjectColor } from '../lib/subjects';
-import { celebrationsOn, FONT_STYLES } from '../lib/prefs';
+import { celebrationsOn, FONT_STYLES, getPageWidth, outlineShown, setOutlineShown, setPageWidth } from '../lib/prefs';
+import { NoteHistory } from '../editor/history';
 import { TEMPLATES, templateOf } from '../lib/templates';
 import { closePopover, openPopover, type MenuItem } from '../lib/menu';
 import { prettyDate, ymd } from '../lib/dates';
@@ -73,8 +74,34 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   let focusMode = false;
   /** Collapsed sections of the open note (screen state only, not saved). */
   const collapsed = new Set<string>();
+  /** Editors of the open note's sections, by section id. */
   const editors = new Map<string, Editor>();
-  const tools = createCanvasTools({ noteId: () => draft?.id ?? '', toast: ctx.toast, onDone: () => void save() });
+  /** Each section's DOM and editor; kept while the note is open so moving a section keeps its Undo history. */
+  interface SectionView {
+    el: HTMLElement;
+    editor: Editor;
+    heading: HTMLInputElement;
+    collapseBtn: HTMLElement;
+    menuBtn: HTMLElement;
+    count: HTMLElement;
+    untrack: () => void;
+  }
+  const views = new Map<string, SectionView>();
+  /** Deleted sections, kept until the note closes so Undo can bring them back as they were. */
+  const parked = new Map<string, SectionView>();
+  /** Note-wide Undo / Redo of the open note. */
+  let hist: NoteHistory | null = null;
+  const tools = createCanvasTools({
+    noteId: () => draft?.id ?? '',
+    toast: ctx.toast,
+    onDone: () => void save(),
+    history: {
+      undo: () => hist?.undo(),
+      redo: () => hist?.redo(),
+      canUndo: () => !!hist?.canUndo(),
+      canRedo: () => !!hist?.canRedo()
+    }
+  });
   /** Hooks into the open canvas; replaced each time a note opens. */
   let canvas: {
     setSave(state: 'editing' | 'saved' | 'error'): void;
@@ -83,11 +110,15 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   } | null = null;
 
   function destroyEditors() {
-    for (const ed of editors.values()) {
-      tools.detach(ed);
-      ed.destroy();
+    for (const v of [...views.values(), ...parked.values()]) {
+      v.untrack();
+      tools.detach(v.editor);
+      v.editor.destroy();
     }
+    views.clear();
+    parked.clear();
     editors.clear();
+    hist = null;
   }
 
   function setFocusMode(on: boolean) {
@@ -111,6 +142,17 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   // Ctrl + . focus mode; Esc closes a menu first, then leaves focus mode.
   const onKey = (e: KeyboardEvent) => {
     if (!draft || !canvas) return;
+    // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y: the note-wide Undo / Redo, wherever the caret is in the note.
+    const k = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === 'z' || k === 'y')) {
+      const t = e.target as HTMLElement | null;
+      if (t && t !== document.body && !t.closest('.canvas, #touchbar, #bubble')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (k === 'y' || e.shiftKey) hist?.redo();
+      else hist?.undo();
+      return;
+    }
     if ((e.ctrlKey || e.metaKey) && e.key === '.') {
       e.preventDefault();
       setFocusMode(!focusMode);
@@ -395,6 +437,20 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       meterNum
     );
     const focusBtn = h('button', { type: 'button', class: 'head-btn', id: 'focus-toggle', 'aria-pressed': 'false', title: 'Focus mode (Ctrl + .)' }, icon('focus', 18), h('span', { class: 'head-btn-text' }, 'Focus'));
+    const undoBtn = h('button', { type: 'button', class: 'icon-btn head-undo', id: 'note-undo', 'aria-label': 'Undo', title: 'Undo (Ctrl + Z)', disabled: true }, icon('undo', 22));
+    const redoBtn = h('button', { type: 'button', class: 'icon-btn head-undo', id: 'note-redo', 'aria-label': 'Redo', title: 'Redo (Ctrl + Shift + Z)', disabled: true }, icon('redo', 22));
+    // Undo / Redo keep the caret and the keyboard where they are.
+    for (const b of [undoBtn, redoBtn]) b.addEventListener('pointerdown', (e) => e.preventDefault());
+    undoBtn.addEventListener('click', () => hist?.undo());
+    redoBtn.addEventListener('click', () => hist?.redo());
+    const outlineBtn = h('button', { type: 'button', class: 'icon-btn head-outline', id: 'outline-toggle', 'aria-label': 'Outline', title: 'Show or hide the outline' }, icon('sidebar', 22));
+    const paintOutlineBtn = () => outlineBtn.setAttribute('aria-pressed', String(outlineShown()));
+    const toggleOutline = () => {
+      setOutlineShown(!outlineShown());
+      paintOutlineBtn();
+    };
+    outlineBtn.addEventListener('click', toggleOutline);
+    paintOutlineBtn();
     const reviewBtn = h('button', { type: 'button', class: 'primary head-review', id: 'mark-reviewed' }, 'Mark reviewed');
     const moreBtn = h('button', { type: 'button', class: 'icon-btn head-more', id: 'note-more', 'aria-label': 'More actions for this note', 'aria-haspopup': 'menu' }, icon('more', 22));
     const header = h(
@@ -409,6 +465,8 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         keyPill,
         meter,
         saveEl,
+        h('span', { class: 'undo-group', role: 'group', 'aria-label': 'Undo and redo' }, undoBtn, redoBtn),
+        outlineBtn,
         focusBtn,
         reviewBtn,
         moreBtn
@@ -530,6 +588,30 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     editorEl.replaceChildren(canvasEl);
     new ResizeObserver(() => canvasEl.style.setProperty('--head-h', `${header.offsetHeight}px`)).observe(header);
 
+    // ----- Undo / Redo for the whole note -----
+    const paintUndo = () => {
+      undoBtn.disabled = !noteHist.canUndo();
+      redoBtn.disabled = !noteHist.canRedo();
+      tools.refresh();
+    };
+    /** Brings a section's change into view after Undo / Redo (without opening the keyboard). */
+    const reveal = (id: string, ed: Editor) => {
+      if (collapsed.has(id)) toggleCollapse(id);
+      requestAnimationFrame(() => {
+        try {
+          const at = ed.view.domAtPos(ed.state.selection.head).node;
+          const el = (at.nodeType === 3 ? at.parentElement : at) as HTMLElement | null;
+          const r = el?.getBoundingClientRect();
+          const top = header.getBoundingClientRect().bottom;
+          if (el && r && (r.bottom < top + 8 || r.top > window.innerHeight - 8)) el.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+        } catch {
+          /* nothing to show */
+        }
+      });
+    };
+    const noteHist = new NoteHistory({ editor: (id) => editors.get(id), reveal, changed: paintUndo });
+    hist = noteHist;
+
     // ----- live numbers: key lines, words, meter, outline counts -----
     const countEls = new Map<string, HTMLElement[]>();
     const wordsEl = h('p', { class: 'ol-words', id: 'word-count' });
@@ -579,7 +661,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       for (const row of outline.querySelectorAll<HTMLElement>('.outline-row')) row.classList.toggle('active', row.dataset.sectionId === activeSection);
     };
 
-    const toggleCollapse = (id: string) => {
+    function toggleCollapse(id: string) {
       if (collapsed.has(id)) collapsed.delete(id);
       else collapsed.add(id);
       const sec = sectionsHost.querySelector<HTMLElement>(`.note-section[data-section-id="${id}"]`);
@@ -592,30 +674,44 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         b.setAttribute('aria-label', `${isC ? 'Expand' : 'Collapse'} section ${d.sections.findIndex((s) => s.id === id) + 1}`);
       }
       renderOutline();
+    }
+
+    /** Puts the note's sections in this order (Undo / Redo of adding, deleting, moving). */
+    const setSections = (list: Section[]) => {
+      const back = list.filter((s) => !d.sections.includes(s));
+      d.sections = [...list];
+      schedule();
+      renderSections();
+      if (back.length) jumpTo(back[0].id);
+    };
+    /** Adding, deleting and moving sections are each one Undo step. */
+    const sectionChange = (change: () => void) => {
+      const before = [...d.sections];
+      change();
+      const after = [...d.sections];
+      noteHist.op(() => setSections(before), () => setSections(after));
+      schedule();
+      renderSections();
     };
 
     const moveSection = (from: number, to: number) => {
       if (from === to || to < 0 || to >= d.sections.length) return;
-      const [s] = d.sections.splice(from, 1);
-      d.sections.splice(to, 0, s);
-      schedule();
-      renderSections();
+      sectionChange(() => {
+        const [s] = d.sections.splice(from, 1);
+        d.sections.splice(to, 0, s);
+      });
     };
 
     const deleteSection = (i: number) => {
       if (d.sections.length < 2) return;
-      d.sections.splice(i, 1);
-      schedule();
-      renderSections();
-      ctx.toast('Section deleted.');
+      sectionChange(() => d.sections.splice(i, 1));
+      ctx.toast('Section deleted. Undo brings it back.');
     };
 
     const addSection = () => {
       const s: Section = { id: newId(), heading: '', doc: textToDoc('') };
-      d.sections.push(s);
-      schedule();
-      renderSections();
-      sectionsHost.querySelector<HTMLInputElement>(`.note-section[data-section-id="${s.id}"] .section-heading`)?.focus();
+      sectionChange(() => d.sections.push(s));
+      views.get(s.id)?.heading.focus();
     };
 
     const sectionMenu = (i: number): MenuItem[] => {
@@ -638,68 +734,99 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       paintActive();
     };
 
-    function renderSections() {
-      destroyEditors();
-      if (!d.sections.length) d.sections.push({ id: newId(), heading: 'Notes', doc: textToDoc('') });
-      countEls.clear();
-      sectionsHost.replaceChildren();
-      d.sections.forEach((s: Section, i: number) => {
-        const isC = collapsed.has(s.id);
-        const heading = h('input', { class: 'section-heading', 'aria-label': `Section ${i + 1} heading`, placeholder: 'Section heading', value: s.heading });
-        heading.addEventListener('input', () => {
-          s.heading = heading.value;
+    const paintOutlineName = (s: Section) => {
+      const row = outline.querySelector(`.outline-row[data-section-id="${s.id}"] .ol-name`);
+      if (row) row.textContent = s.heading.trim() || 'Untitled section';
+    };
+
+    /** Builds one section: heading row and its editor. Built once per note; moving it keeps it. */
+    function buildSection(s: Section): SectionView {
+      const isC = collapsed.has(s.id);
+      const heading = h('input', { class: 'section-heading', placeholder: 'Section heading', value: s.heading });
+      heading.addEventListener('input', () => {
+        const before = s.heading;
+        s.heading = heading.value;
+        noteHist.field(`heading:${s.id}`, before, s.heading, (v) => {
+          s.heading = String(v);
+          const input = views.get(s.id)?.heading;
+          if (input) input.value = s.heading;
+          paintOutlineName(s);
           schedule();
-          const row = outline.querySelector(`.outline-row[data-section-id="${s.id}"] .ol-name`);
-          if (row) row.textContent = s.heading.trim() || 'Untitled section';
-          live();
         });
-        const collapseBtn = h(
-          'button',
-          { type: 'button', class: 'sec-collapse', 'aria-expanded': String(!isC), 'aria-label': `${isC ? 'Expand' : 'Collapse'} section ${i + 1}` },
-          icon('chevron', 18)
-        );
-        collapseBtn.addEventListener('click', () => toggleCollapse(s.id));
-        const count = h('span', { class: 'sec-count' });
-        countEls.set(s.id, [count]);
-        const menuBtn = h('button', { type: 'button', class: 'sec-menu-btn', 'aria-label': `Section ${i + 1} options`, 'aria-haspopup': 'menu' }, icon('more', 20));
-        menuBtn.addEventListener('click', () => openPopover(menuBtn, sectionMenu(i), `Section ${i + 1}`));
-        heading.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            editors.get(s.id)?.commands.focus('start');
-          }
-        });
-        const bodyEl = h('div', { class: 'section-body', 'data-section': s.id, hidden: isC });
-        sectionsHost.append(
-          h(
-            'section',
-            { class: isC ? 'note-section collapsed' : 'note-section', 'data-section-id': s.id },
-            h('div', { class: 'section-head' }, collapseBtn, heading, count, menuBtn),
-            bodyEl
-          )
-        );
-        const ed = createEditor({
-          element: bodyEl,
-          content: s.doc,
-          slash: tools.slash,
-          paste: tools.paste,
-          onChange: (doc) => {
-            s.doc = doc;
-            schedule();
-            live();
-          },
-          onFocus: (e) => {
-            tools.setEditor(e);
-            activeSection = s.id;
-            paintActive();
-          },
-          onBlur: (e) => tools.onBlur(e)
-        });
-        editors.set(s.id, ed);
+        schedule();
+        paintOutlineName(s);
+        live();
       });
-      const add = h('button', { type: 'button', class: 'add-section', id: 'add-section' }, '+ Add section');
-      add.addEventListener('click', addSection);
-      sectionsHost.append(add);
+      const collapseBtn = h('button', { type: 'button', class: 'sec-collapse', 'aria-expanded': String(!isC) }, icon('chevron', 18));
+      collapseBtn.addEventListener('click', () => toggleCollapse(s.id));
+      const count = h('span', { class: 'sec-count' });
+      const menuBtn = h('button', { type: 'button', class: 'sec-menu-btn', 'aria-haspopup': 'menu' }, icon('more', 20));
+      menuBtn.addEventListener('click', () => {
+        const i = d.sections.indexOf(s);
+        if (i >= 0) openPopover(menuBtn, sectionMenu(i), `Section ${i + 1}`);
+      });
+      heading.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          editors.get(s.id)?.commands.focus('start');
+        }
+      });
+      const bodyEl = h('div', { class: 'section-body', 'data-section': s.id, hidden: isC });
+      const el = h(
+        'section',
+        { class: isC ? 'note-section collapsed' : 'note-section', 'data-section-id': s.id },
+        h('div', { class: 'section-head' }, collapseBtn, heading, count, menuBtn),
+        bodyEl
+      );
+      const ed = createEditor({
+        element: bodyEl,
+        content: s.doc,
+        slash: tools.slash,
+        paste: tools.paste,
+        onChange: (doc) => {
+          s.doc = doc;
+          schedule();
+          live();
+        },
+        onFocus: (e) => {
+          tools.setEditor(e);
+          activeSection = s.id;
+          paintActive();
+        },
+        onBlur: (e) => tools.onBlur(e)
+      });
+      return { el, editor: ed, heading, collapseBtn, menuBtn, count, untrack: noteHist.track(s.id, ed) };
+    }
+
+    const addSectionBtn = h('button', { type: 'button', class: 'add-section', id: 'add-section' }, '+ Add section');
+    addSectionBtn.addEventListener('click', addSection);
+
+    function renderSections() {
+      if (!d.sections.length) d.sections.push({ id: newId(), heading: 'Notes', doc: textToDoc('') });
+      const keep = new Set(d.sections.map((s) => s.id));
+      for (const [id, v] of views) {
+        if (keep.has(id)) continue;
+        // deleted: off the page, but kept (with its Undo history) until the note closes
+        tools.detach(v.editor);
+        v.el.remove();
+        views.delete(id);
+        editors.delete(id);
+        parked.set(id, v);
+      }
+      countEls.clear();
+      d.sections.forEach((s, i) => {
+        const v = views.get(s.id) ?? parked.get(s.id) ?? buildSection(s);
+        parked.delete(s.id);
+        views.set(s.id, v);
+        editors.set(s.id, v.editor);
+        const isC = collapsed.has(s.id);
+        v.heading.setAttribute('aria-label', `Section ${i + 1} heading`);
+        v.collapseBtn.setAttribute('aria-label', `${isC ? 'Expand' : 'Collapse'} section ${i + 1}`);
+        v.menuBtn.setAttribute('aria-label', `Section ${i + 1} options`);
+        countEls.set(s.id, [v.count]);
+        sectionsHost.append(v.el); // in order; an existing section just moves
+      });
+      sectionsHost.append(addSectionBtn);
       renderOutline();
       live();
     }
@@ -831,7 +958,14 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
 
     // ----- field wiring -----
     title.addEventListener('input', () => {
+      const before = d.title;
       d.title = title.value.replace(/\s*\n\s*/g, ' ');
+      noteHist.field('title', before, d.title, (v) => {
+        d.title = String(v);
+        title.value = d.title;
+        growTitle();
+        schedule();
+      });
       growTitle();
       schedule();
     });
@@ -841,19 +975,35 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         editors.get(d.sections[0]?.id)?.commands.focus('start');
       }
     });
-    subject.addEventListener('change', () => {
-      d.subject = subject.value;
+    const setSubject = (v: unknown) => {
+      d.subject = String(v);
+      subject.value = d.subject;
       paintSubject();
       paintHeadMeta();
       schedule();
+    };
+    subject.addEventListener('change', () => {
+      const before = d.subject;
+      setSubject(subject.value);
+      noteHist.field('subject', before, d.subject, setSubject);
     });
     topic.addEventListener('input', () => {
+      const before = d.topic;
       d.topic = topic.value;
+      noteHist.field('topic', before, d.topic, (v) => {
+        d.topic = String(v);
+        topic.value = d.topic;
+        sizeTopic();
+        paintHeadMeta();
+        schedule();
+      });
       sizeTopic();
       paintHeadMeta();
       schedule();
     });
     template.addEventListener('change', () => {
+      // the template and the sections it added are one Undo step
+      const was = { template: d.template, sections: [...d.sections] };
       const t = templateOf(template.value);
       if (t.id === 'blank') delete d.template;
       else d.template = t.id;
@@ -871,23 +1021,43 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       }
       schedule();
       renderSections();
+      const now = { template: d.template, sections: [...d.sections] };
+      const put = (st: typeof was) => {
+        if (st.template) d.template = st.template;
+        else delete d.template;
+        template.value = templateOf(d.template).id;
+        setSections(st.sections);
+        live();
+      };
+      noteHist.op(() => put(was), () => put(now));
       ctx.toast(added.length ? `${t.name}: added ${added.join(', ')}. Nothing was removed.` : `Template set to ${t.name}.`);
     });
-    explain.addEventListener('input', () => {
-      d.explain = explain.value;
-      schedule();
-      paintReflect();
-    });
-    connect.addEventListener('input', () => {
-      d.connect = connect.value;
-      schedule();
-      paintReflect();
-    });
-    styleSelect.addEventListener('change', () => {
-      if (styleSelect.value) d.fontStyle = styleSelect.value;
+    const reflectField = (el: HTMLTextAreaElement, key: 'explain' | 'connect') =>
+      el.addEventListener('input', () => {
+        const before = d[key];
+        d[key] = el.value;
+        noteHist.field(key, before, d[key], (v) => {
+          d[key] = String(v);
+          el.value = d[key];
+          schedule();
+          paintReflect();
+        });
+        schedule();
+        paintReflect();
+      });
+    reflectField(explain, 'explain');
+    reflectField(connect, 'connect');
+    const setNoteFont = (v: unknown) => {
+      if (v) d.fontStyle = String(v);
       else delete d.fontStyle;
+      styleSelect.value = d.fontStyle ?? '';
       applyNoteFont();
       schedule();
+    };
+    styleSelect.addEventListener('change', () => {
+      const before = d.fontStyle ?? '';
+      setNoteFont(styleSelect.value);
+      noteHist.field('font', before, d.fontStyle ?? '', setNoteFont);
     });
     const applyNoteFont = () => {
       for (const f of FONT_STYLES) canvasEl.classList.remove(`font-${f.id}`);
@@ -910,6 +1080,15 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         [
           { label: 'Export note as PDF', run: () => void runPdfExport({ kind: 'note', note: structuredClone(d) }, ctx) },
           { label: 'Focus mode (Ctrl + .)', run: () => setFocusMode(true) },
+          {
+            label: getPageWidth() === 'full' ? 'Comfortable width' : 'Full width',
+            aria: 'Note width',
+            run: () => {
+              setPageWidth(getPageWidth() === 'full' ? 'comfortable' : 'full');
+              ctx.toast(getPageWidth() === 'full' ? 'Notes use the full screen width.' : 'Notes use a comfortable reading width.');
+            }
+          },
+          ...(window.matchMedia('(min-width: 1000px)').matches ? [{ label: outlineShown() ? 'Hide outline' : 'Show outline', aria: 'Outline', run: toggleOutline }] : []),
           { label: 'Own words and connections', run: () => openDetails(explain) },
           { label: 'Font style for this note', run: () => openDetails(styleSelect) },
           { label: 'Move to trash', danger: true, run: () => void toTrash() }

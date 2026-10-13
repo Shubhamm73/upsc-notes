@@ -28,6 +28,11 @@ export const FONT_STYLES: FontStyle[] = [
 const KEY_THEME = 'upsc.theme';
 const KEY_FONT = 'upsc.font';
 const KEY_CELEBRATE = 'upsc.celebrate';
+const KEY_WIDTH = 'upsc.width';
+const KEY_OUTLINE = 'upsc.outline';
+
+/** Note width: the whole screen (default), or a comfortable reading column. PDFs are A4 either way. */
+export type PageWidth = 'full' | 'comfortable';
 
 function read(key: string): string | null {
   try {
@@ -66,6 +71,8 @@ export function applyAppearance() {
   if (t === 'system') delete root.dataset.theme;
   else root.dataset.theme = t;
   root.dataset.font = getFontStyle();
+  root.dataset.width = getPageWidth();
+  root.dataset.outline = outlineShown() ? 'shown' : 'hidden';
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', isNight() ? '#111519' : '#2d5b4e');
   window.dispatchEvent(new Event('themechange'));
 }
@@ -91,4 +98,23 @@ export function celebrationsOn(): boolean {
 
 export function setCelebrations(on: boolean) {
   write(KEY_CELEBRATE, on ? 'on' : 'off');
+}
+
+export function getPageWidth(): PageWidth {
+  return read(KEY_WIDTH) === 'comfortable' ? 'comfortable' : 'full';
+}
+
+export function setPageWidth(w: PageWidth) {
+  write(KEY_WIDTH, w);
+  applyAppearance();
+}
+
+/** The outline rail beside an open note (landscape). Shown unless folded away. */
+export function outlineShown(): boolean {
+  return read(KEY_OUTLINE) !== 'hidden';
+}
+
+export function setOutlineShown(on: boolean) {
+  write(KEY_OUTLINE, on ? 'shown' : 'hidden');
+  applyAppearance();
 }

@@ -11,6 +11,7 @@ import { ImageBlock } from './image-block';
 import { ChartBlock } from './chart-block';
 import { Callout } from './callout';
 import { pasteExtension, type PasteHooks } from './paste';
+import { PictureFlow } from './flow';
 
 /** Bullet list with a style switch: dots (default) or dashes. */
 const StyledBulletList = BulletList.extend({
@@ -93,6 +94,20 @@ function slashExtension(hook: SlashHook) {
   });
 }
 
+/**
+ * The editor's JSON without `clear: null` (PictureFlow's "start below the picture" attribute when off),
+ * so paragraphs keep the shape older notes and backups have.
+ */
+function tidy(n: DocNode): DocNode {
+  if (n.attrs && 'clear' in n.attrs && !n.attrs.clear) {
+    const { clear: _off, ...rest } = n.attrs;
+    n.attrs = rest;
+    if (!Object.keys(rest).length) delete n.attrs;
+  }
+  n.content?.forEach(tidy);
+  return n;
+}
+
 export function createEditor(opts: {
   element: HTMLElement;
   content: DocNode;
@@ -123,6 +138,7 @@ export function createEditor(opts: {
       ImageBlock,
       ChartBlock,
       Callout,
+      PictureFlow,
       ActiveBlock,
       MarkSweep,
       ...(opts.slash ? [slashExtension(opts.slash)] : []),
@@ -130,7 +146,7 @@ export function createEditor(opts: {
       Placeholder.configure({ placeholder: opts.placeholder ?? 'Write here. Type / to add a list, table, chart or callout.' })
     ],
     editorProps: { attributes: { class: 'rich', spellcheck: 'true' } },
-    onUpdate: ({ editor }) => opts.onChange(editor.getJSON() as DocNode),
+    onUpdate: ({ editor }) => opts.onChange(tidy(editor.getJSON() as DocNode)),
     onFocus: ({ editor }) => opts.onFocus(editor),
     onBlur: ({ editor }) => opts.onBlur?.(editor)
   });

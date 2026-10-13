@@ -62,7 +62,7 @@ export const CALLOUT_ITEMS: InsertItem[] = CALLOUT_KINDS.map((k) => ({
   name: `${k.label} callout`,
   hint: k.hint,
   glyph: `i:${k.icon}`,
-  keywords: `callout box ${k.label} ${k.id}`,
+  keywords: `callout box ${k.label} ${k.id}${k.id === 'pyq' ? ' previous year question' : ''}`,
   run: (e) => setCallout(e, k.id)
 }));
 
@@ -85,7 +85,7 @@ export const INSERT_ITEMS: InsertItem[] = [
   { id: 'chart', name: 'Chart', hint: 'Bar, line or pie from a small grid', glyph: 'i:data', keywords: 'chart graph bar line pie', run: (e) => insertBlocks(e, { type: 'chartBlock', attrs: structuredClone(DEFAULT_CHART) }) },
   { id: 'image', name: 'Image', hint: 'From the tablet, resizable', glyph: 'i:image', keywords: 'image photo picture diagram map', run: (e, env) => env.pickImage(e) },
   { id: 'sketch', name: 'Sketch', hint: 'Draw with the S Pen · coming soon', glyph: 'i:marker', keywords: 'sketch draw pen drawing', soon: true, run: (_e, env) => env.toast('Sketching with the S Pen arrives in a later update.') },
-  { id: 'callout', name: 'Callout', hint: 'Article, Case, Data, Example, Way forward', glyph: 'i:article', keywords: 'callout box', submenu: true, run: () => undefined },
+  { id: 'callout', name: 'Callout', hint: 'Article, Case, Data, Example, Way forward, PYQ', glyph: 'i:article', keywords: 'callout box pyq', submenu: true, run: () => undefined },
   {
     id: 'divider',
     name: 'Divider',

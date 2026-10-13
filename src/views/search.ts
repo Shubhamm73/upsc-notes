@@ -1,6 +1,5 @@
 import { db } from '../db';
 import { calloutsIn, noteSearchText } from '../lib/doc';
-import { calloutKind } from '../lib/callouts';
 import { h } from '../lib/h';
 import { icon } from '../lib/icons';
 import type { AppContext } from '../app';
@@ -50,7 +49,7 @@ export function openSearch(ctx: AppContext) {
     const calloutHint = (n: (typeof notes)[number]) => {
       for (const sec of n.sections) {
         for (const c of calloutsIn(sec.doc)) {
-          const label = calloutKind(c.kind).label;
+          const label = c.label;
           if (`${label} callout`.toLowerCase().includes(q) || c.text.toLowerCase().includes(q)) return `${label}: ${c.text.slice(0, 80)}${c.text.length > 80 ? '…' : ''}`;
         }
       }

@@ -1,5 +1,5 @@
 import type { DocNode, Note } from '../db';
-import { calloutKind } from './callouts';
+import { calloutLabel } from './callouts';
 
 /**
  * M1 keeps a plain-text body but stores it in the editor's JSON shape,
@@ -35,10 +35,10 @@ export function docToText(doc: DocNode | undefined): string {
 }
 
 /** Every UPSC callout in a doc, in reading order, with its plain text. */
-export function calloutsIn(doc: DocNode | undefined): { kind: string; text: string }[] {
-  const out: { kind: string; text: string }[] = [];
+export function calloutsIn(doc: DocNode | undefined): { kind: string; label: string; text: string }[] {
+  const out: { kind: string; label: string; text: string }[] = [];
   const walk = (n: DocNode) => {
-    if (n.type === 'callout') out.push({ kind: String(n.attrs?.kind ?? 'article'), text: docToText(n).replace(/\s+/g, ' ').trim() });
+    if (n.type === 'callout') out.push({ kind: String(n.attrs?.kind ?? 'article'), label: calloutLabel(n.attrs), text: docToText(n).replace(/\s+/g, ' ').trim() });
     (n.content ?? []).forEach(walk);
   };
   if (doc) walk(doc);
@@ -56,10 +56,21 @@ export function noteSearchText(n: Note): string {
     n.subject,
     n.explain,
     n.connect,
-    ...n.sections.map((s) => [s.heading, docToText(s.doc), ...calloutsIn(s.doc).map((c) => `${calloutKind(c.kind).label} callout`)].join(' '))
+    ...n.sections.map((s) => [s.heading, docToText(s.doc), ...calloutsIn(s.doc).map((c) => `${c.label} callout`), ...imageCaptions(s.doc)].join(' '))
   ]
     .join(' ')
     .toLowerCase();
+}
+
+/** Captions under pictures (searchable like text). */
+export function imageCaptions(doc: DocNode | undefined): string[] {
+  const out: string[] = [];
+  const walk = (n: DocNode) => {
+    if (n.type === 'imageBlock' && typeof n.attrs?.caption === 'string' && n.attrs.caption.trim()) out.push(n.attrs.caption.trim());
+    (n.content ?? []).forEach(walk);
+  };
+  walk(doc ?? { type: 'doc' });
+  return out;
 }
 
 /** Words in a note's sections (title, headings and the reflection fields are not counted). */

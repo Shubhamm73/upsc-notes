@@ -4,8 +4,9 @@ import { chartConfig, PRINT_PALETTE, readChart, type ChartData } from '../editor
 import { collectImageIds } from '../editor/images';
 import { ymd } from '../lib/dates';
 import { groupInsights } from '../lib/insights';
-import { calloutKind } from '../lib/callouts';
+import { calloutKind, calloutLabel } from '../lib/callouts';
 import { docToText } from '../lib/doc';
+import { isPlain, normRotate, readCrop, shapeOf, tracePath } from '../lib/shapes';
 
 /** A4 in points, with 48 pt margins. */
 const PAGE_W = 595.28;
@@ -36,15 +37,79 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-async function loadImages(docs: DocNode[]): Promise<Map<string, { url: string; w: number; h: number }>> {
+type Pic = { url: string; w: number; h: number };
+
+/** Which prepared picture an image block prints: the stored one, or its cropped / shaped version. */
+function picKey(attrs: Record<string, unknown> | undefined): string {
+  const a = attrs ?? {};
+  const id = String(a.imageId);
+  if (isPlain(a) && shapeOf(a.shape).id === 'rect') return id;
+  return [id, JSON.stringify(readCrop(a.crop)), shapeOf(a.shape).id, normRotate(a.rotate), a.flip ? 1 : 0].join('|');
+}
+
+async function loadImages(docs: DocNode[]): Promise<Map<string, Pic>> {
   const ids = new Set<string>();
   docs.forEach((d) => collectImageIds(d, ids));
-  const out = new Map<string, { url: string; w: number; h: number }>();
+  const out = new Map<string, Pic>();
   for (const id of ids) {
     const rec = await db.images.get(id);
     if (rec) out.set(id, { url: await blobToDataUrl(rec.blob), w: rec.width, h: rec.height });
   }
+  // Cropped, turned, mirrored or shaped pictures are drawn once, as they look on screen.
+  const shaped: Record<string, unknown>[] = [];
+  const walk = (n: DocNode) => {
+    if (n.type === 'imageBlock' && n.attrs && picKey(n.attrs) !== String(n.attrs.imageId)) shaped.push(n.attrs);
+    (n.content ?? []).forEach(walk);
+  };
+  docs.forEach(walk);
+  for (const a of shaped) {
+    const key = picKey(a);
+    const src = out.get(String(a.imageId));
+    if (!src || out.has(key)) continue;
+    try {
+      out.set(key, await shapePicture(src, a));
+    } catch {
+      out.set(key, src); // printing the plain picture beats printing nothing
+    }
+  }
   return out;
+}
+
+/** Draws a picture with its crop, turn, mirror and shape (transparent outside the shape). */
+async function shapePicture(src: Pic, a: Record<string, unknown>): Promise<Pic> {
+  const img = new Image();
+  img.src = src.url;
+  await img.decode();
+  const W = img.naturalWidth;
+  const H = img.naturalHeight;
+  const rot = normRotate(a.rotate);
+  const tw = rot % 180 ? H : W;
+  const th = rot % 180 ? W : H;
+  const c = readCrop(a.crop) ?? { x: 0, y: 0, w: 1, h: 1 };
+  const cw = c.w * tw;
+  const ch = c.h * th;
+  const k = Math.min(1, 1600 / Math.max(cw, ch));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(cw * k));
+  canvas.height = Math.max(1, Math.round(ch * k));
+  const g = canvas.getContext('2d')!;
+  const shape = shapeOf(a.shape).id;
+  if (shape !== 'rect') {
+    g.beginPath();
+    tracePath(g, shape, 0, 0, canvas.width, canvas.height);
+    g.clip();
+  } else {
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  g.scale(k, k);
+  g.translate(-c.x * tw, -c.y * th);
+  g.translate(tw / 2, th / 2);
+  if (a.flip) g.scale(-1, 1);
+  g.rotate((rot * Math.PI) / 180);
+  g.drawImage(img, -W / 2, -H / 2, W, H);
+  const url = shape === 'rect' ? canvas.toDataURL('image/jpeg', 0.9) : canvas.toDataURL('image/png');
+  return { url, w: canvas.width, h: canvas.height };
 }
 
 /** Draws a chart off-screen in print colours and returns it as a PNG. */
@@ -98,7 +163,7 @@ function inlines(nodes: DocNode[] | undefined): Content[] {
 }
 
 interface Ctx {
-  images: Map<string, { url: string; w: number; h: number }>;
+  images: Map<string, Pic>;
   width: number; // available width at this nesting level
 }
 
@@ -111,7 +176,15 @@ function textHeight(n: DocNode, width: number): number {
   return lines(docToText(n)) * 13.5 + (n.type === 'heading' ? 10 : 6);
 }
 
-const WRAPS = ['paragraph', 'heading', 'bulletList', 'orderedList'];
+const WRAPS = ['paragraph', 'bulletList', 'orderedList'];
+/** Text that can print beside a floated picture: not a heading, not a block set to start below it. */
+const wraps = (n: DocNode | undefined) => !!n && WRAPS.includes(n.type) && !n.attrs?.clear;
+
+/** A picture's caption, under it. */
+function captionOf(n: DocNode, alignment: string): Content[] {
+  const t = typeof n.attrs?.caption === 'string' ? n.attrs.caption.trim() : '';
+  return t ? [{ text: t, italics: true, color: MUTED, fontSize: 9, alignment, margin: [0, 3, 0, 0] }] : [];
+}
 
 function blocks(nodes: DocNode[] | undefined, ctx: Ctx): Content[] {
   const list = nodes ?? [];
@@ -119,21 +192,21 @@ function blocks(nodes: DocNode[] | undefined, ctx: Ctx): Content[] {
   for (let i = 0; i < list.length; i++) {
     const n = list[i];
     const align = n.attrs?.align;
-    const img = n.type === 'imageBlock' ? ctx.images.get(String(n.attrs?.imageId)) : undefined;
+    const img = n.type === 'imageBlock' ? ctx.images.get(picKey(n.attrs)) : undefined;
     // A left/right image with text after it prints side by side with that text, as on screen:
     // the text blocks that fit next to the picture's height go in the column beside it.
-    if (img && (align === 'left' || align === 'right') && WRAPS.includes(list[i + 1]?.type ?? '')) {
+    if (img && (align === 'left' || align === 'right') && wraps(list[i + 1])) {
       const pct = Math.min(100, Math.max(10, Number(n.attrs?.width ?? 50)));
       const w = Math.min((ctx.width * pct) / 100, ctx.width - 120);
       const imgH = Math.min((w * img.h) / img.w, 640);
       const textW = ctx.width - w - 14;
       const beside: DocNode[] = [];
       let used = 0;
-      while (WRAPS.includes(list[i + 1]?.type ?? '') && (beside.length === 0 || used < imgH)) {
+      while (wraps(list[i + 1]) && (beside.length === 0 || used < imgH)) {
         used += textHeight(list[i + 1], textW);
         beside.push(list[++i]);
       }
-      const picture = { image: img.url, width: w, height: imgH };
+      const picture = { stack: [{ image: img.url, width: w, height: imgH }, ...captionOf(n, 'left')] };
       const text = { width: '*', stack: blocks(beside, { ...ctx, width: textW }) };
       out.push({ columns: align === 'left' ? [{ width: w, stack: [picture] }, text] : [text, { width: w, stack: [picture] }], columnGap: 14, margin: [0, 4, 0, 10] });
       continue;
@@ -174,14 +247,17 @@ function block(n: DocNode, ctx: Ctx): Content | null {
     case 'table':
       return table(n, ctx);
     case 'imageBlock': {
-      const img = ctx.images.get(String(n.attrs?.imageId));
+      const img = ctx.images.get(picKey(n.attrs));
       if (!img) return { text: '[image missing]', color: MUTED, italics: true, margin: [0, 4, 0, 8] };
       const pct = Math.min(100, Math.max(10, Number(n.attrs?.width ?? 100)));
       let w = (ctx.width * pct) / 100;
       // keep very tall images within one page
       const maxH = 640;
       if ((w * img.h) / img.w > maxH) w = (maxH * img.w) / img.h;
-      return { image: img.url, width: w, alignment: String(n.attrs?.align ?? 'center'), margin: [0, 4, 0, 10] };
+      const alignment = String(n.attrs?.align ?? 'center');
+      const caption = captionOf(n, alignment);
+      const picture = { image: img.url, width: w, alignment };
+      return caption.length ? { stack: [picture, ...caption], unbreakable: true, margin: [0, 4, 0, 10] } : { ...picture, margin: [0, 4, 0, 10] };
     }
     case 'chartBlock': {
       const d = readChart(n.attrs as Partial<ChartData>);
@@ -204,7 +280,7 @@ function block(n: DocNode, ctx: Ctx): Content | null {
             [
               {
                 stack: [
-                  { text: k.label.toUpperCase(), fontSize: 8.5, bold: true, color: k.print, characterSpacing: 0.8, margin: [0, 0, 0, 3] },
+                  { text: calloutLabel(n.attrs).toUpperCase(), fontSize: 8.5, bold: true, color: k.print, characterSpacing: 0.8, margin: [0, 0, 0, 3] },
                   ...blocks(n.content, { ...ctx, width: ctx.width - 24 })
                 ],
                 fillColor: k.printBg,
@@ -255,8 +331,24 @@ function table(n: DocNode, ctx: Ctx): Content {
     return cells;
   });
   const headerRows = rows.length && (rows[0].content ?? []).every((c) => c.type === 'tableHeader') ? 1 : 0;
+  // Columns dragged to a width on screen print in the same proportions; otherwise equal shares.
+  const px: number[] = [];
+  for (const c of rows[0]?.content ?? []) {
+    const span = Number(c.attrs?.colspan ?? 1);
+    const cw = Array.isArray(c.attrs?.colwidth) ? (c.attrs!.colwidth as unknown[]) : [];
+    for (let j = 0; j < span; j++) px.push(Number(cw[j]) || 0);
+  }
+  let widths: (number | string)[] = Array(cols).fill('*');
+  if (px.length === cols && px.some((v) => v > 0)) {
+    const known = px.filter((v) => v > 0);
+    const avg = known.reduce((a, b) => a + b, 0) / known.length;
+    const full = px.map((v) => v || avg);
+    const total = full.reduce((a, b) => a + b, 0);
+    const room = ctx.width - cols * 10 - (cols + 1) * 0.6;
+    widths = full.map((v) => Math.max(24, (v / total) * room));
+  }
   return {
-    table: { headerRows, widths: Array(cols).fill('*'), body, dontBreakRows: true },
+    table: { headerRows, widths, body, dontBreakRows: true },
     layout: {
       hLineWidth: () => 0.6,
       vLineWidth: () => 0.6,

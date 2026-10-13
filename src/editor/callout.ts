@@ -1,17 +1,18 @@
 import { Node, mergeAttributes, type Editor } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
-import { calloutKind } from '../lib/callouts';
+import { calloutKind, calloutLabel } from '../lib/callouts';
 import { icon } from '../lib/icons';
 
 /**
- * A UPSC callout (Article, Case, Data, Example, Way forward): a tinted box with an
- * icon and a label, holding ordinary paragraphs and lists. Stored as
+ * A UPSC callout (Article, Case, Data, Example, Way forward, PYQ): a tinted box with an
+ * icon and a label, holding ordinary paragraphs, lists and pictures. Stored as
  * { type: 'callout', attrs: { kind }, content: [...] } inside a section's doc.
+ * A PYQ also keeps year / paper / marks (shown in its label; null when not filled in).
  */
 export const Callout = Node.create({
   name: 'callout',
   group: 'block',
-  content: '(paragraph | bulletList | orderedList)+',
+  content: '(paragraph | bulletList | orderedList | imageBlock)+',
   defining: true,
 
   addAttributes() {
@@ -20,7 +21,10 @@ export const Callout = Node.create({
         default: 'article',
         parseHTML: (el: HTMLElement) => calloutKind(el.getAttribute('data-callout')).id,
         renderHTML: (attrs: { kind?: string }) => ({ 'data-callout': attrs.kind })
-      }
+      },
+      year: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute('data-year'), renderHTML: (a: { year?: string | null }) => (a.year ? { 'data-year': a.year } : {}) },
+      paper: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute('data-paper'), renderHTML: (a: { paper?: string | null }) => (a.paper ? { 'data-paper': a.paper } : {}) },
+      marks: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute('data-marks'), renderHTML: (a: { marks?: string | null }) => (a.marks ? { 'data-marks': a.marks } : {}) }
     };
   },
 
@@ -51,12 +55,14 @@ export const Callout = Node.create({
       let kind = '';
       const paint = (n: PMNode) => {
         const k = calloutKind(n.attrs.kind);
+        label.textContent = calloutLabel(n.attrs);
+        if (n.attrs.clear) dom.dataset.clear = 'both';
+        else delete dom.dataset.clear;
         if (k.id === kind) return;
         kind = k.id;
         dom.dataset.callout = k.id;
         dom.setAttribute('aria-label', `${k.label} callout`);
         ic.replaceChildren(icon(k.icon, 20));
-        label.textContent = k.label;
       };
       paint(node);
       return {
@@ -117,6 +123,18 @@ export function setCallout(editor: Editor, kind: string) {
     .insertContentAt(pos, { type: 'callout', attrs: { kind }, content: [{ type: 'paragraph' }] })
     .setTextSelection(pos + 2)
     .run();
+}
+
+/** Year / paper / marks of the PYQ callout around the cursor. */
+export function setPyqDetails(editor: Editor, details: { year?: string | null; paper?: string | null; marks?: string | null }) {
+  const here = calloutAt(editor);
+  if (!here || here.node.attrs.kind !== 'pyq') return;
+  const clean = Object.fromEntries(Object.entries(details).map(([k, v]) => [k, v && String(v).trim() ? String(v).trim() : null]));
+  editor.view.dispatch(editor.state.tr.setNodeMarkup(here.pos, undefined, { ...here.node.attrs, ...clean }));
+}
+
+export function calloutAttrsAt(editor: Editor): Record<string, unknown> | null {
+  return calloutAt(editor)?.node.attrs ?? null;
 }
 
 /** Keeps the text, drops the callout box around it. */

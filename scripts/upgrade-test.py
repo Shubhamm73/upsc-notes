@@ -112,7 +112,12 @@ try:
         Image.new("RGB", (640, 400), (60, 120, 90)).save(img)
         page.keyboard.press("Enter")
         page.keyboard.type("/image")
-        has_image = page.locator("#insert-menu:not([hidden])").count() > 0
+        # wait for the menu to filter down to Image (pressing Enter earlier picks whatever is first)
+        try:
+            page.wait_for_selector(".insert-opt[data-item='image'][aria-selected='true']", timeout=3000)
+            has_image = True
+        except Exception:
+            has_image = False
         if has_image:
             with page.expect_file_chooser() as fc:
                 page.keyboard.press("Enter")

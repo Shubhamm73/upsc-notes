@@ -122,13 +122,16 @@ with sync_playwright() as p:
     check(page.locator(".pane-list").is_hidden(), "landscape: open note is a full-page canvas")
     title_size = page.evaluate("parseFloat(getComputedStyle(document.querySelector('#f-title')).fontSize)")
     check(34 <= title_size <= 36.5, f"title is 34-36 px ({title_size})")
+    # 0.8.3: the note fills the screen; a ~90-character column is the Comfortable choice
     col = page.locator(".canvas-col").bounding_box()["width"]
-    check(480 <= col <= 640, f"text column about 72 characters wide ({col:.0f}px)")
+    check(col >= 780, f"text column fills the screen beside the outline ({col:.0f}px)")
+    page.evaluate("localStorage.setItem('upsc.width', 'comfortable'); document.documentElement.dataset.width = 'comfortable'")
     per_line = page.evaluate("""() => { const p = document.createElement('p'); p.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font:inherit';
         p.textContent = 'The Directive Principles of State Policy are guidelines for the framing of laws by the government. '.repeat(2);
         const col = document.querySelector('.rich'); col.append(p); const w = p.getBoundingClientRect().width / p.textContent.length; p.remove();
         return Math.round(col.getBoundingClientRect().width / w); }""")
-    check(64 <= per_line <= 80, f"about 72 characters of prose per line ({per_line})")
+    check(80 <= per_line <= 100, f"Comfortable width: about 90 characters of prose per line ({per_line})")
+    page.evaluate("localStorage.removeItem('upsc.width'); document.documentElement.dataset.width = 'full'")
 
     # ---- New note: template picker ----
     page.click(".back-link")
@@ -139,7 +142,7 @@ with sync_playwright() as p:
     page.click(".tpl-card[data-template='topic-sheet']")
     page.wait_for_selector("#f-title")
     heads = page.eval_on_selector_all(".section-heading", "e => e.map(x => x.value)")
-    check(heads == ["Key terms", "Articles and cases", "Data", "Examples"], f"Topic sheet sections ({heads})")
+    check(heads == ["Key terms", "Articles and cases", "Data", "Examples", "PYQs"], f"Topic sheet sections ({heads})")
     page.fill("#f-title", "Fundamental Rights vs DPSP")
     page.select_option("#f-subject", "GS2")
     page.fill("#f-topic", "Constitution")
@@ -220,7 +223,7 @@ with sync_playwright() as p:
 
     # ---- outline: tap to jump, collapse, long-press drag to reorder ----
     rows = page.locator("#outline .ol-jump")
-    check(rows.count() == 4, "outline lists every section")
+    check(rows.count() == 5, "outline lists every section")
     rows.nth(3).click()
     page.wait_for_timeout(900)
     top = page.locator(".note-section").nth(3).bounding_box()["y"]
@@ -239,7 +242,7 @@ with sync_playwright() as p:
     page.mouse.up()
     page.wait_for_timeout(300)
     heads = page.eval_on_selector_all(".section-heading", "e => e.map(x => x.value)")
-    check(heads == ["Examples", "Key terms", "Articles and cases", "Data"], f"long-press drag reorders sections ({heads})")
+    check(heads == ["Examples", "Key terms", "Articles and cases", "Data", "PYQs"], f"long-press drag reorders sections ({heads})")
     check(page.locator(".sec-btn").count() == 0 and page.locator("button[aria-label*='Move section'][aria-label$='up']:visible").count() == 0, "no up/down buttons left on the page")
 
     # section PDF from the outline menu (a callout is in it)
@@ -352,7 +355,7 @@ with sync_playwright() as p:
     pp.locator(".section-body .rich").first.tap()
     check(pp.locator("#touchbar").is_visible() and pp.locator(".rail").is_hidden(), "portrait: touch bar replaces the bottom nav while writing")
     tlabels = pp.eval_on_selector_all("#touchbar button", "e => e.map(x => x.getAttribute('aria-label'))")
-    check(tlabels == ["Insert", "Mark (highlight)", "List: bullets, dashes, numbers, off", "Undo", "Done writing"], f"touch bar: + Mark List Undo Done ({tlabels})")
+    check(tlabels == ["Insert", "Mark (highlight)", "List: bullets, dashes, numbers, off", "Undo", "Redo", "Done writing"], f"touch bar: + Mark List Undo Redo Done ({tlabels})")
     sizes = pp.eval_on_selector_all("#touchbar button", "e => e.map(x => Math.round(x.getBoundingClientRect().height))")
     check(min(sizes) >= 44, f"touch bar targets >= 44 px ({sizes})")
     pp.keyboard.type("Separation of powers keeps each organ in check")

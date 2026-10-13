@@ -1,5 +1,5 @@
 import { h } from '../lib/h';
-import { celebrationsOn, FONT_STYLES, getFontStyle, getTheme, setCelebrations, setFontStyle, setTheme, type ThemePref } from '../lib/prefs';
+import { celebrationsOn, FONT_STYLES, getFontStyle, getPageWidth, getTheme, setCelebrations, setFontStyle, setPageWidth, setTheme, type PageWidth, type ThemePref } from '../lib/prefs';
 import type { AppContext, View } from '../app';
 
 export function mountAppearance(root: HTMLElement, ctx: AppContext): View {
@@ -48,6 +48,26 @@ export function mountAppearance(root: HTMLElement, ctx: AppContext): View {
   };
   paintFonts();
 
+  const widths: [PageWidth, string, string][] = [
+    ['full', 'Full width', 'The note uses the whole screen'],
+    ['comfortable', 'Comfortable', 'A reading column, about 90 characters']
+  ];
+  const widthGroup = h('div', { class: 'seg theme-seg', role: 'radiogroup', 'aria-label': 'Note width' });
+  const paintWidths = () => {
+    const cur = getPageWidth();
+    widthGroup.replaceChildren(
+      ...widths.map(([id, name, sub]) => {
+        const b = h('button', { type: 'button', role: 'radio', 'aria-checked': String(cur === id), class: 'theme-opt', id: `pref-width-${id}` }, h('strong', {}, name), h('span', { class: 'meta' }, sub));
+        b.addEventListener('click', () => {
+          setPageWidth(id);
+          paintWidths();
+        });
+        return b;
+      })
+    );
+  };
+  paintWidths();
+
   const celebrate = h('input', { type: 'checkbox', id: 'pref-celebrate', checked: celebrationsOn() });
   celebrate.addEventListener('change', () => {
     setCelebrations(celebrate.checked);
@@ -60,6 +80,13 @@ export function mountAppearance(root: HTMLElement, ctx: AppContext): View {
       { class: 'settings' },
       h('h1', {}, 'Settings'),
       h('section', { class: 'card-block' }, h('h2', {}, 'Theme'), themeGroup),
+      h(
+        'section',
+        { class: 'card-block' },
+        h('h2', {}, 'Note width'),
+        h('p', { class: 'meta' }, 'How wide the writing area is. PDFs are always A4, whichever you pick.'),
+        widthGroup
+      ),
       h(
         'section',
         { class: 'card-block' },
