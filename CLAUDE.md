@@ -2,7 +2,7 @@
 
 Offline-first study-notes PWA for one UPSC aspirant (owner's brother) on a **Samsung Galaxy Tab S8**.
 Owner: Shubham (GitHub `Shubhamm73`). Live: https://shubhamm73.github.io/upsc-notes/ (GitHub Pages via Actions on push to `main`).
-Current version: **0.8.3 (UI-3 done; 0.8.3: full-width notes, PYQ callout, note-wide Undo/Redo, text on every side of a picture, Crop & shape)**. Next: **UI-4 — S Pen & finishing** (after the UI-3 gate: a week of real review sessions on the tablet, nothing lost).
+Current version: **0.8.3 (UI-3 done; 0.8.3: full-width notes, PYQ callout, note-wide Undo/Redo, text on every side of a picture, Crop & shape)**. Next: **UI-4 — S Pen & finishing**, step U4-1 (see "UI-4 session plan" in the roadmap; owner chose to start it on 13 Oct 2026).
 
 ## Non-negotiable rules
 - **Local-only data.** Notes, words, images live in IndexedDB (Dexie) on the device. No server storage, no accounts, no login. GitHub Pages serves code only.
@@ -143,8 +143,21 @@ Today queue → full-screen **review session**: one card at a time; card types: 
 
 Decisions taken at build time (owner, 12 Oct 2026): whole-note card has Again/Hard/Easy (Easy = Mark reviewed); insight front blanks the line inside its paragraph; backup format 2; one-level undo; Settings switch for streak moments; session = 40 key lines/words + every due note; smoke-test-ui1's Start review checks now follow the session.
 
-### UI-4 — S Pen & finishing (Opus medium for sketch, Sonnet medium for rest) ← NEXT
+### UI-4 — S Pen & finishing ← NEXT
 Sketch block (pressure, palm rejection, stored as image, in PDF), mark with the pen, optional haptics (setting), speed pass on a 5,000-word note, accessibility pass, PDF for new blocks.
+
+**UI-4 session plan** (owner, 13 Oct 2026: start UI-4 now, one step per fresh session, in this order).
+Every step: baseline first (all suites + upgrade test from the previous release; stop if red) → state understanding as a table with a
+proposal for each open decision → wait for "go" → build → debug (stress any failing test to a root cause) → upgrade test from the
+previous release → bump version → update this file (tick the step, add "as built" notes and gotchas) → commit, push the branch,
+fast-forward main → confirm the live version → run all suites against the live site → end with the next step's prompt, real commit hashes filled in.
+
+| Step | Scope | Model · effort | Version | Status |
+|---|---|---|---|---|
+| U4-1 | **Sketch block**: replaces "Sketch · coming soon"; S Pen pressure, palm rejection (only pen draws, a finger scrolls), eraser/undo/clear, stored (image, and strokes if decided), backup, PDF | Opus · high | 0.9.0 | ☐ |
+| U4-2 | **Mark with the pen** (highlight text with the S Pen) + **optional haptics** (Settings switch, off by default) | Opus · medium | 0.9.1 | ☐ |
+| U4-3 | **Speed pass** on a 5,000-word note (open, typing, scroll, autosave, live counts, PDF, review), measured before/after at 4× CPU throttle | Opus · high | 0.9.2 | ☐ |
+| U4-4 | **Accessibility pass** (axe, keyboard-only, contrast day/night, names, targets) + **PDF audit of every block** + close UI-4 | Sonnet · medium | 0.9.3 | ☐ |
 
 ### Motion spec (UI-2/UI-3)
 Open note: card expands to page 240 ms · Save: dot pulse then ✓ 160 ms · Highlight: marker sweep 200 ms · Mark reviewed: highlighted lines fly up into Quick insights 300 ms · Slash menu: fade + rise 4 px 120 ms · Flashcard flip 240 ms · Rating: slide out 200 ms · Summary rings fill 300 ms · Delete forever: row collapse 160 ms, no celebration.
