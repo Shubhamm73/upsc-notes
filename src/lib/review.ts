@@ -18,7 +18,6 @@ export type QueueItem =
 export type SessionFilter = 'all' | 'insights' | 'words' | 'notes';
 
 export const dueOf = (it: QueueItem) => (it.type === 'insight' ? it.card.due : it.type === 'word' ? it.word.nextReview : it.note.nextReview);
-export const subjectOf = (it: QueueItem) => (it.type === 'word' ? null : it.note.subject);
 
 /** Keeps a note's cards in step with its quick insights (after Mark reviewed, a note rating, or an import). */
 export function syncNoteCards(note: Note, opts: { seed?: boolean } = {}) {

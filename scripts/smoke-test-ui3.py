@@ -176,8 +176,8 @@ with sync_playwright() as p:
     # ================= 1. writing → cards → a full session =================
     ctx, page = new_ctx(browser, 0)
     info = page.evaluate(IDB_INFO)
-    check(info["version"] == 30 and "cards" in info["stores"] and info["key"] == "id" and set(info["idx"]) == {"noteId", "due"},
-          f"Dexie v3: cards store keyed by id, indexed by noteId and due {info}")
+    check(info["version"] == 40 and "cards" in info["stores"] and info["key"] == "id" and set(info["idx"]) == {"noteId", "due"},
+          f"Dexie v4 (0.10; v3 added cards): cards store keyed by id, indexed by noteId and due {info}")
 
     page.goto(URL + "#/n/new/blank")
     page.wait_for_selector("#f-title")
@@ -400,7 +400,7 @@ with sync_playwright() as p:
     bpath = OUT / "ui3-backup.json"
     dl.value.save_as(bpath)
     bk = json.loads(bpath.read_text())
-    check(bk["format"] == 3 and bk["schemaVersion"] == 3, "backup: format 3 (0.9: may hold sketches), schema 3")
+    check(bk["format"] == 4 and bk["schemaVersion"] == 4, "backup: format 4 (0.10: folders), schema 4")
     check(len(bk["cards"]) == 4 and bk["counts"]["cards"] == 4 and bk["meta"]["reviewDays"] == [D0, D1], "backup carries all cards (retired too) and the review days")
 
     # ---- D4: re-highlighting a removed line brings its card back ----
@@ -418,7 +418,7 @@ with sync_playwright() as p:
     # ---- trash: a trashed note's cards leave the queue; delete forever removes them ----
     page.click("#details summary")
     page.click("#note-trash")
-    page.wait_for_url("**/#/notes")
+    page.wait_for_url("**/#/notes/**")  # 0.10: ← goes to the note's subject
     page.goto(URL + "#/")
     expect(page.locator("#due-summary")).to_have_text("2 items · about 1 min", timeout=5000)
     page.goto(URL + "#/trash")
@@ -431,7 +431,7 @@ with sync_playwright() as p:
     page.click(".note-card:has-text('Fundamental Rights vs DPSP')")
     page.click("#details summary")
     page.click("#note-trash")
-    page.wait_for_url("**/#/notes")
+    page.wait_for_url("**/#/notes/**")  # 0.10: ← goes to the note's subject
     page.goto(URL + "#/trash")
     page.click(".trash-row button:has-text('Delete forever')")
     page.fill(".confirm-input", "DELETE")

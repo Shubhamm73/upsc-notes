@@ -83,7 +83,8 @@ with sync_playwright() as p:
     page.goto(URL + "#/n/new/blank")
     page.wait_for_selector("#f-title")
     page.fill("#f-title", "Parliament")
-    page.select_option("#f-subject", "GS2")
+    page.click("#f-subject")  # 0.10: the subject chip opens Move to…
+    page.click("#move-sheet [data-folder='gen:GS2']")
     page.fill("#f-topic", "Polity")
     page.fill(".section-heading", "Composition")
     ed = page.locator(".section-body .rich").first
@@ -148,7 +149,7 @@ with sync_playwright() as p:
     # ---- note PDF ----
     note = grab("#note-pdf")
     t = text_of(note)
-    for needle in ["Parliament", "GS2 · Polity", "Composition", "Lok Sabha basics", "– Max strength 552", "1. Speaker elected",
+    for needle in ["Parliament", "GS2 › General · Polity", "Composition", "Lok Sabha basics", "– Max strength 552", "1. Speaker elected",
                    "Money bills start here", "House", "5 years", "Untitled chart", "Powers", "In my own words"]:
         check(needle in t, f"note PDF contains '{needle}'")
     imgs = image_count(note)
@@ -171,7 +172,7 @@ with sync_playwright() as p:
     check(pages >= 4, f"full PDF has cover, contents, notes, vocabulary pages ({pages})")
     check("1 notes · 1 words" in t, "cover shows counts")
 
-    page.select_option("#pdf-subject", "GS3")
+    page.select_option("#pdf-subject", label="GS3")
     page.uncheck("#pdf-vocab")
     empty = grab("#pdf-all")
     check("Nothing to export" in text_of(empty), "empty subject explains itself")

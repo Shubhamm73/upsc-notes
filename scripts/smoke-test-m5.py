@@ -1,5 +1,7 @@
 """v0.5 smoke test: CSAT->Interview migration, quick insights, trash, unified search, inline links."""
 import subprocess
+from datetime import date
+from urllib.parse import quote
 import sys
 import tempfile
 from pathlib import Path
@@ -91,8 +93,8 @@ with sync_playwright() as p:
     n = page.evaluate(IDB_GET, ["notes", "old-csat"])
     check(n and n["subject"] == "Interview", f"CSAT note migrated to Interview ({n and n['subject']})")
     check(page.evaluate(IDB_GET, ["notes", "stale-trash"]) is None, "item in trash over 30 days purged on launch")
-    chips = page.eval_on_selector_all(".chips button", "e => e.map(x => x.textContent)")
-    check("Interview" in chips and "CSAT" not in chips, f"subject chips show Interview ({chips})")
+    chips = page.eval_on_selector_all(".fcard[data-id] .fname", "e => e.map(x => x.textContent)")  # 0.10: main subjects
+    check("Interview" in chips and "CSAT" not in chips, f"main subjects show Interview ({chips})")
 
     # ---- quick insights ----
     page.goto(URL + "#/n/new/blank")
@@ -176,7 +178,7 @@ with sync_playwright() as p:
     page.click(".note-card:has-text('Fundamental Rights')")
     page.click("#details summary")
     page.click("#note-trash")
-    page.wait_for_url("**/#/notes")
+    page.wait_for_url("**/#/notes/**")  # 0.10: back to the note's subject
     page.goto(URL + "#/trash")
     page.click(".trash-row button:has-text('Delete forever')")
     btn = page.locator(".confirm-panel button:has-text('Delete forever')")
@@ -190,10 +192,10 @@ with sync_playwright() as p:
     check(left == 1, f"note deleted forever ({left} notes left)")
 
     # word trash + empty trash
-    page.goto(URL + "#/vocab")
+    page.goto(URL + "#/vocab/f/" + quote("wd:" + date.today().isoformat()))  # 0.10: words are filed by day
     page.click(".note-card:has-text('Justiciable')")
     page.click("#word-trash")
-    page.wait_for_url("**/#/vocab")
+    page.wait_for_url("**/#/vocab/**")
     page.goto(URL + "#/trash")
     page.click("#empty-trash")
     page.fill(".confirm-input", "DELETE")

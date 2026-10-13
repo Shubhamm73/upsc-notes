@@ -1,6 +1,7 @@
 import { db, getMeta } from '../db';
 import { collectImageIds, removeUnusedImages } from '../editor/images';
 import { deleteCardsOf } from './review';
+import { ensureFolders } from './folders';
 
 export type TrashKind = 'note' | 'word';
 export const TRASH_DAYS_DEFAULT = 30;
@@ -19,7 +20,11 @@ async function setDeleted(kind: TrashKind, id: string, deletedAt: number | null)
 }
 
 export const moveToTrash = (kind: TrashKind, id: string) => setDeleted(kind, id, Date.now());
-export const restoreFromTrash = (kind: TrashKind, id: string) => setDeleted(kind, id, null);
+/** Restores a note or word; the folder it was in comes back with it if that was deleted. */
+export async function restoreFromTrash(kind: TrashKind, id: string) {
+  await setDeleted(kind, id, null);
+  await ensureFolders();
+}
 
 /** How many stored images go with a trashed note (shown before a permanent delete). */
 export async function imageCountFor(noteId: string): Promise<number> {

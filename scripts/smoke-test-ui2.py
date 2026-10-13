@@ -114,7 +114,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(1500)
     check(page.evaluate(IDB_GET, "v06-note")["updatedAt"] == 5, "opening an old note does not rewrite it")
     page.click(".canvas-head .back-link")
-    page.wait_for_url("**/#/notes")
+    page.wait_for_url("**/#/notes/**")  # 0.10: ← goes to the note's subject
     page.wait_for_timeout(1200)
     check(page.evaluate(IDB_GET, "v06-note")["updatedAt"] == 5, "leaving a note without editing does not re-save it")
     page.goto(URL + "#/n/v06-note")
@@ -144,7 +144,8 @@ with sync_playwright() as p:
     heads = page.eval_on_selector_all(".section-heading", "e => e.map(x => x.value)")
     check(heads == ["Key terms", "Articles and cases", "Data", "Examples", "PYQs"], f"Topic sheet sections ({heads})")
     page.fill("#f-title", "Fundamental Rights vs DPSP")
-    page.select_option("#f-subject", "GS2")
+    page.click("#f-subject")  # 0.10: the subject chip opens Move to…
+    page.click("#move-sheet [data-folder='gen:GS2']")
     page.fill("#f-topic", "Constitution")
 
     # ---- slash menu ----

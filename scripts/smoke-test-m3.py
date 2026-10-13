@@ -1,5 +1,7 @@
 """M3 smoke test: vocabulary. Needs `vite preview` on :4173."""
 import json
+from datetime import date
+from urllib.parse import quote
 import sys
 import tempfile
 from pathlib import Path
@@ -58,7 +60,8 @@ with sync_playwright() as p:
     page.wait_for_timeout(300)
     check("Next review" in page.locator(".review-info").inner_text(), "review scheduled")
 
-    # duplicate warning
+    # duplicate warning (0.10: a word is a full page; Add word to today is on the Vocabulary screen)
+    page.goto(URL + "#/vocab")
     page.click("#new-word")
     page.fill("#v-word", "ameliorate ")
     check(page.locator(".dup").is_visible(), "duplicate word warning shows")
@@ -71,7 +74,10 @@ with sync_playwright() as p:
     page.fill("#vocab-search", "alleviate")
     check(page.locator("#vocab-list .note-card").count() == 1, "search finds by synonym")
     page.fill("#vocab-search", "")
-    check(page.locator("#vocab-list .note-card").count() == 2, "list shows both words")
+    # 0.10: words are filed by day: Vocabulary › month › date
+    page.goto(URL + "#/vocab/f/" + quote("wd:" + date.today().isoformat()))
+    page.wait_for_selector("#vocab-list .note-card")
+    check(page.locator("#vocab-list .note-card").count() == 2, "today's date lists both words")
     order = page.eval_on_selector_all("#vocab-list strong", "e => e.map(x => x.textContent)")
     check(order == ["Ameliorate", "Pragmatic"], f"alphabetical order {order}")
 

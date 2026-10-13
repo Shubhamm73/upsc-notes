@@ -1,14 +1,13 @@
 import type { Note } from '../db';
 import { h } from './h';
-import { subjectColor } from './subjects';
 
 const RING_R = 24;
 const RING_C = 2 * Math.PI * RING_R;
 const NS = 'http://www.w3.org/2000/svg';
 
-/** Share of a subject's live notes that are reviewed and not overdue, 0–100; null = no notes. */
-export function ringValue(notes: Note[], subject: string, today: string): number | null {
-  const list = notes.filter((n) => !n.deletedAt && n.subject === subject);
+/** Share of these notes (a main subject's, a subject's) that are reviewed and not overdue, 0–100; null = no notes. */
+export function ringOf(notes: Note[], today: string): number | null {
+  const list = notes.filter((n) => !n.deletedAt);
   if (!list.length) return null;
   const ok = list.filter((n) => n.reviewCount > 0 && n.nextReview >= today).length;
   return Math.round((ok / list.length) * 100);
@@ -20,13 +19,13 @@ function svgEl(tag: string, attrs: Record<string, string>) {
   return el;
 }
 
-const arc = (subject: string, pct: number, startPct = 0) =>
+const arc = (colour: string, pct: number, startPct = 0) =>
   svgEl('circle', {
     cx: '32',
     cy: '32',
     r: String(RING_R),
     fill: 'none',
-    stroke: subjectColor(subject),
+    stroke: colour,
     'stroke-width': '7',
     'stroke-linecap': 'round',
     'stroke-dasharray': `${(pct / 100) * RING_C} ${RING_C}`,
@@ -38,16 +37,16 @@ const arc = (subject: string, pct: number, startPct = 0) =>
  * A subject ring. With `from` (session summary) the part gained since `from` is drawn as its own arc,
  * so it can sweep into place with a transform (see animateRingGain).
  */
-export function subjectRing(name: string, value: number | null, opts: { href?: string; from?: number | null } = {}): HTMLElement {
+export function subjectRing(name: string, value: number | null, opts: { colour: string; href?: string; from?: number | null }): HTMLElement {
   const svg = svgEl('svg', { width: '64', height: '64', viewBox: '0 0 64 64', role: 'img' });
   svg.setAttribute('aria-label', value === null ? `${name}: no notes yet` : `${name}: ${value} percent on schedule`);
   svg.append(svgEl('circle', { cx: '32', cy: '32', r: String(RING_R), fill: 'none', stroke: 'var(--chip)', 'stroke-width': '7' }));
   const v = value ?? 0;
   const from = Math.min(opts.from ?? v, v);
-  if (from > 0) svg.append(arc(name, from));
+  if (from > 0) svg.append(arc(opts.colour, from));
   if (v > from) {
     const g = svgEl('g', { class: 'ring-gain', 'data-gain': String(v - from) });
-    g.append(arc(name, v - from, from));
+    g.append(arc(opts.colour, v - from, from));
     svg.append(g);
   }
   const label = svgEl('text', { x: '32', y: '37', 'text-anchor': 'middle', 'font-size': '14', 'font-weight': '700', fill: 'var(--fg)' });

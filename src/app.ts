@@ -4,6 +4,7 @@ import { mountNotes } from './views/notes';
 import { mountVocab } from './views/vocab';
 import { mountTrash } from './views/trash';
 import { purgeOldTrash } from './lib/trash';
+import { ensureFolders } from './lib/folders';
 import { mountSettings } from './views/settings';
 import { mountToday } from './views/today';
 import { mountMore } from './views/more';
@@ -199,6 +200,8 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
   window.addEventListener('hashchange', () => void route());
   void ensurePersistence()
     .then(() => purgeOldTrash())
+    .catch(() => 0)
+    .then(() => ensureFolders())
     .catch(() => 0)
     .finally(() => void route());
 }

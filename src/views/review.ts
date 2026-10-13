@@ -1,12 +1,13 @@
 import type { Editor } from '@tiptap/core';
-import { db, SUBJECTS, type Note } from '../db';
+import { db, type Note } from '../db';
 import { createEditor } from '../editor/editor';
 import { currentStreak, milestoneText } from '../lib/activity';
 import { prettyDate, ymd } from '../lib/dates';
 import { h } from '../lib/h';
 import { icon } from '../lib/icons';
 import { celebrationsOn } from '../lib/prefs';
-import { animateRingGain, ringValue, subjectRing } from '../lib/rings';
+import { animateRingGain, ringOf, subjectRing } from '../lib/rings';
+import { FolderIndex } from '../lib/folders';
 import {
   buildSession,
   filterItems,
@@ -14,13 +15,11 @@ import {
   minutesFor,
   rateItem,
   stepOfItem,
-  subjectOf,
   type QueueItem,
   type RateResult,
   type SessionFilter
 } from '../lib/review';
 import { whenLabel, type Rating } from '../lib/schedule';
-import { subjectColor } from '../lib/subjects';
 import type { AppContext, View } from '../app';
 
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -38,8 +37,22 @@ const KIND_LABEL = { insight: 'Insight card', word: 'Word', note: 'Whole note' }
 
 const times = (n: number) => (n === 0 ? 'not reviewed yet' : n === 1 ? 'reviewed once' : n === 2 ? 'reviewed twice' : `reviewed ${n} times`);
 
-function subjectTag(subject: string) {
-  return h('span', { class: 'subject-tag' }, h('span', { class: 'dot', style: `background: ${subjectColor(subject)}` }), subject);
+/** Folders, for where a note is filed (loaded with each session). */
+let fidx = new FolderIndex([]);
+
+function subjectTag(n: Note) {
+  return h('span', { class: 'subject-tag' }, h('span', { class: 'dot', style: `background: ${fidx.noteColour(n)}` }), fidx.label(n));
+}
+
+/** Each main subject's ring value over these notes. */
+function ringsByMain(notes: Note[], today: string): Map<string, number | null> {
+  const by = new Map<string, Note[]>();
+  for (const n of notes) {
+    if (n.deletedAt) continue;
+    const m = fidx.placeOf(n).main?.id;
+    if (m) by.set(m, [...(by.get(m) ?? []), n]);
+  }
+  return new Map(fidx.roots('notes').map((m) => [m.id, ringOf(by.get(m.id) ?? [], today)]));
 }
 
 /**
@@ -110,8 +123,9 @@ export function mountReview(root: HTMLElement, ctx: AppContext): View {
     filter = f;
     destroyEditors();
     const today = ymd();
-    const { items: due, notes } = await loadDue(today);
+    const [{ items: due, notes }, folders] = await Promise.all([loadDue(today), db.folders.toArray()]);
     if (my !== token) return;
+    fidx = new FolderIndex(folders);
     const built = buildSession(due, filter);
     queue = built.queue;
     index = 0;
@@ -122,7 +136,7 @@ export function mountReview(root: HTMLElement, ctx: AppContext): View {
     milestone = null;
     last = null;
     startedAt = Date.now();
-    ringsBefore = new Map(SUBJECTS.map((s) => [s, ringValue(notes, s, today)]));
+    ringsBefore = ringsByMain(notes, today);
     // "Key line 2 of 4 in this section" needs every live card of the notes in this session.
     const noteIds = [...new Set(queue.filter((i) => i.type === 'insight').map((i) => (i.type === 'insight' ? i.note.id : '')))];
     const cards = noteIds.length ? await db.cards.where('noteId').anyOf(noteIds).toArray() : [];
@@ -171,7 +185,7 @@ export function mountReview(root: HTMLElement, ctx: AppContext): View {
     const tagRow = h(
       'div',
       { class: 'rv-tags' },
-      subjectOf(it) ? subjectTag(subjectOf(it) as string) : null,
+      it.type !== 'word' ? subjectTag(it.note) : null,
       h('span', { class: 'meta' }, KIND_LABEL[it.type])
     );
     if (it.type === 'insight') {
@@ -464,14 +478,17 @@ export function mountReview(root: HTMLElement, ctx: AppContext): View {
     paintHead();
     const mins = Math.round((Date.now() - startedAt) / 60000);
     const items = [...seen.values()];
-    const subjects = SUBJECTS.filter((s) => items.some((i) => subjectOf(i) === s));
-    const counts = (s: string) => items.filter((i) => subjectOf(i) === s).length;
+    const mainOf = (i: QueueItem) => (i.type === 'word' ? null : (fidx.placeOf(i.note).main?.id ?? null));
+    const mains = fidx.roots('notes').filter((m) => items.some((i) => mainOf(i) === m.id));
+    const counts = (id: string) => items.filter((i) => mainOf(i) === id).length;
+    const ringsAfter = ringsByMain(notes as Note[], today);
     const ringsEl = h(
       'div',
       { class: 'rv-rings', id: 'rv-rings' },
-      ...subjects.map((s) => {
-        const after = ringValue(notes as Note[], s, today);
-        const el = subjectRing(s, after, { from: ringsBefore.get(s) ?? null });
+      ...mains.map((m) => {
+        const s = m.id;
+        const after = ringsAfter.get(s) ?? null;
+        const el = subjectRing(m.name, after, { colour: fidx.colour(m), from: ringsBefore.get(s) ?? null });
         el.append(h('span', { class: 'meta' }, `${counts(s)} ${counts(s) === 1 ? 'card' : 'cards'}`));
         return el;
       })
@@ -498,7 +515,7 @@ export function mountReview(root: HTMLElement, ctx: AppContext): View {
             )
           ),
           milestone && celebrationsOn() ? h('p', { class: 'rv-milestone', id: 'rv-milestone' }, icon('flame', 18), milestoneText(milestone)) : null,
-          subjects.length ? h('div', {}, h('p', { class: 'eyebrow' }, 'Subjects you reviewed'), ringsEl) : null,
+          mains.length ? h('div', {}, h('p', { class: 'eyebrow' }, 'Subjects you reviewed'), ringsEl) : null,
           wordsDone ? h('p', { class: 'meta' }, `${wordsDone} ${wordsDone === 1 ? 'word' : 'words'} reviewed.`) : null
         ] as (HTMLElement | null)[]
       ).filter((x): x is HTMLElement => x !== null)

@@ -2,6 +2,7 @@ import { db } from '../db';
 import { calloutsIn, noteSearchText } from '../lib/doc';
 import { h } from '../lib/h';
 import { icon } from '../lib/icons';
+import { FolderIndex } from '../lib/folders';
 import type { AppContext } from '../app';
 
 let open: HTMLElement | null = null;
@@ -43,8 +44,9 @@ export function openSearch(ctx: AppContext) {
       results.replaceChildren(h('li', { class: 'search-hint' }, 'Type a word, a case name, an article number…'));
       return;
     }
-    const [notes, words] = await Promise.all([db.notes.toArray(), db.vocab.toArray()]);
+    const [notes, words, folders] = await Promise.all([db.notes.toArray(), db.vocab.toArray(), db.folders.toArray()]);
     if (mine !== seq) return;
+    const idx = new FolderIndex(folders);
     // A note whose callouts match ("case" → its Case callouts) is listed first, with the callout as a hint.
     const calloutHint = (n: (typeof notes)[number]) => {
       for (const sec of n.sections) {
@@ -56,7 +58,7 @@ export function openSearch(ctx: AppContext) {
       return null;
     };
     const noteHits = notes
-      .filter((n) => !n.deletedAt && noteSearchText(n).includes(q))
+      .filter((n) => !n.deletedAt && (noteSearchText(n).includes(q) || idx.label(n).toLowerCase().includes(q)))
       .map((n) => ({ n, hint: calloutHint(n) }))
       .sort((a, b) => Number(!!b.hint) - Number(!!a.hint) || b.n.updatedAt - a.n.updatedAt)
       .slice(0, 12);
@@ -68,13 +70,32 @@ export function openSearch(ctx: AppContext) {
       ctx.go(hash);
     };
     const items: HTMLElement[] = [];
+    // Subjects and main subjects by name: one tap opens the folder.
+    const folderHits = idx
+      .subjectsByMain()
+      .flatMap(({ main, subjects }) => [main, ...subjects.filter((s) => s.name !== 'General')])
+      .filter((f) => f.name.toLowerCase().includes(q))
+      .slice(0, 6);
+    if (folderHits.length) items.push(h('li', { class: 'list-divider' }, `Subjects · ${folderHits.length}`));
+    for (const f of folderHits) {
+      const href = `#/notes/f/${encodeURIComponent(f.id)}`;
+      const main = idx.get(f.parent);
+      const a = h(
+        'a',
+        { href, class: 'search-hit folder-hit' },
+        h('strong', {}, h('span', { class: 'dot', style: `background: ${idx.colour(f)}` }), f.name),
+        h('span', { class: 'meta' }, main ? `Subject in ${main.name}` : 'Main subject')
+      );
+      a.addEventListener('click', (e) => (e.preventDefault(), go(href)()));
+      items.push(h('li', {}, a));
+    }
     if (noteHits.length) items.push(h('li', { class: 'list-divider' }, `Notes · ${noteHits.length}`));
     for (const { n, hint } of noteHits) {
       const a = h(
         'a',
         { href: `#/n/${n.id}`, class: 'search-hit' },
         h('strong', {}, n.title || 'Untitled note'),
-        h('span', { class: 'meta' }, [n.subject, n.topic].filter(Boolean).join(' · ')),
+        h('span', { class: 'meta' }, [idx.label(n), n.topic].filter(Boolean).join(' · ')),
         hint ? h('span', { class: 'meta callout-hit' }, hint) : null
       );
       a.addEventListener('click', (e) => (e.preventDefault(), go(`#/n/${n.id}`)()));

@@ -1,14 +1,16 @@
-import { db, getMeta, RENAMED_SUBJECTS, SCHEMA_VERSION, setMeta, type ImageRec, type Note, type ReviewCard, type Vocab } from '../db';
+import { db, getMeta, RENAMED_SUBJECTS, SCHEMA_VERSION, setMeta, type Folder, type ImageRec, type Note, type ReviewCard, type Vocab } from '../db';
+import { planFolders } from './folder-plan';
 import { ymd } from './dates';
 import { syncNoteCards } from './review';
 
 const APP = 'upsc-notes';
 /**
  * 1 = 0.1–0.7 (notes, words, images); 2 = 0.8 (adds review cards and the streak's review days);
- * 3 = 0.9+ (notes may hold sketch blocks). An older app refuses a newer format instead of opening
- * sections it can't show as blank pages.
+ * 3 = 0.9 (notes may hold sketch blocks); 4 = 0.10+ (adds folders; notes and words may name their folder).
+ * An older app refuses a newer format instead of opening sections it can't show as blank pages
+ * (format 3) or dropping the folders (format 4).
  */
-const FORMAT = 3;
+const FORMAT = 4;
 
 interface ImageOut extends Omit<ImageRec, 'blob'> {
   type: string;
@@ -20,12 +22,14 @@ export interface BackupFile {
   format: number;
   schemaVersion: number;
   exportedAt: string;
-  counts: { notes: number; vocab: number; images: number; cards?: number };
+  counts: { notes: number; vocab: number; images: number; cards?: number; folders?: number };
   notes: Note[];
   vocab: Vocab[];
   images: ImageOut[];
   /** Format 2+. Absent in older backups: cards are then made from each note's quick insights. */
   cards?: ReviewCard[];
+  /** Format 4+. Absent in older backups: folders are then made the way the 0.10 upgrade makes them. */
+  folders?: Folder[];
   meta?: { reviewDays?: string[] };
 }
 
@@ -35,6 +39,7 @@ export interface ImportReport {
   keptNewer: number;
   images: number;
   cards: number;
+  folders: number;
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -55,14 +60,14 @@ function base64ToBlob(data: string, type: string): Blob {
 
 /** Everything on this device, trash included, as one JSON file. */
 export async function buildBackup(): Promise<{ blob: Blob; filename: string; counts: BackupFile['counts'] }> {
-  const [notes, vocab, imgs, cards, reviewDays] = await db.transaction('r', db.notes, db.vocab, db.images, db.cards, db.meta, () =>
-    Promise.all([db.notes.toArray(), db.vocab.toArray(), db.images.toArray(), db.cards.toArray(), getMeta<string[]>('reviewDays', [])])
+  const [notes, vocab, imgs, cards, folders, reviewDays] = await db.transaction('r', [db.notes, db.vocab, db.images, db.cards, db.folders, db.meta], () =>
+    Promise.all([db.notes.toArray(), db.vocab.toArray(), db.images.toArray(), db.cards.toArray(), db.folders.toArray(), getMeta<string[]>('reviewDays', [])])
   );
   const images: ImageOut[] = [];
   for (const { blob, ...rest } of imgs) {
     images.push({ ...rest, type: blob.type || 'image/jpeg', data: await blobToBase64(blob) });
   }
-  const counts = { notes: notes.length, vocab: vocab.length, images: images.length, cards: cards.length };
+  const counts = { notes: notes.length, vocab: vocab.length, images: images.length, cards: cards.length, folders: folders.length };
   const file: BackupFile = {
     app: APP,
     format: FORMAT,
@@ -73,6 +78,7 @@ export async function buildBackup(): Promise<{ blob: Blob; filename: string; cou
     vocab,
     images,
     cards,
+    folders,
     meta: { reviewDays }
   };
   const blob = new Blob([JSON.stringify(file)], { type: 'application/json' });
@@ -98,7 +104,9 @@ function validate(raw: unknown): BackupFile {
     !Array.isArray(f.vocab) ||
     !Array.isArray(f.images) ||
     (f.cards !== undefined && !Array.isArray(f.cards)) ||
-    (f.format >= 2 && !Array.isArray(f.cards))
+    (f.format >= 2 && !Array.isArray(f.cards)) ||
+    (f.folders !== undefined && !Array.isArray(f.folders)) ||
+    (f.format >= 4 && !Array.isArray(f.folders))
   ) {
     throw new BackupError('This backup file is incomplete or damaged. Try an older backup file.');
   }
@@ -120,7 +128,28 @@ function validate(raw: unknown): BackupFile {
       (c.lastReviewed === null || num(c.lastReviewed))
     );
   };
-  if (![...f.notes, ...f.vocab, ...f.images].every(okRecord) || !(f.cards ?? []).every(okCard)) {
+  // A folder too: one with a bad field would hide what is filed in it.
+  const okFolder = (raw: unknown) => {
+    const x = raw as Record<string, unknown>;
+    return (
+      okRecord(x) &&
+      (x.kind === 'notes' || x.kind === 'words') &&
+      (x.parent === null || str(x.parent)) &&
+      str(x.name) &&
+      (x.colour === null || str(x.colour)) &&
+      num(x.order) &&
+      num(x.createdAt) &&
+      (x.date === undefined || str(x.date)) &&
+      (x.deletedAt === null || num(x.deletedAt))
+    );
+  };
+  const okFiled = (r: unknown) => (r as { folderId?: unknown }).folderId === undefined || str((r as { folderId?: unknown }).folderId);
+  if (
+    ![...f.notes, ...f.vocab, ...f.images].every(okRecord) ||
+    ![...f.notes, ...f.vocab].every(okFiled) ||
+    !(f.cards ?? []).every(okCard) ||
+    !(f.folders ?? []).every(okFolder)
+  ) {
     throw new BackupError('Some records in this backup are damaged, so nothing was imported. Try an older backup file.');
   }
   return f as BackupFile;
@@ -139,11 +168,18 @@ export async function importBackup(file: File): Promise<ImportReport> {
   }
   const data = validate(parsed);
   for (const n of data.notes) if (RENAMED_SUBJECTS[n.subject]) n.subject = RENAMED_SUBJECTS[n.subject];
-  const report: ImportReport = { added: 0, updated: 0, keptNewer: 0, images: 0, cards: 0 };
+  const report: ImportReport = { added: 0, updated: 0, keptNewer: 0, images: 0, cards: 0, folders: 0 };
   /** Notes written by this import: their cards are brought in step with their quick insights afterwards. */
   const written: Note[] = [];
 
-  await db.transaction('rw', [db.notes, db.vocab, db.images, db.cards, db.meta], async () => {
+  await db.transaction('rw', [db.notes, db.vocab, db.images, db.cards, db.folders, db.meta], async () => {
+    for (const f of data.folders ?? []) {
+      const here = await db.folders.get(f.id);
+      if (!here || f.updatedAt > here.updatedAt) {
+        await db.folders.put(f);
+        report.folders++;
+      }
+    }
     for (const [table, rows] of [
       [db.notes, data.notes],
       [db.vocab, data.vocab]
@@ -184,6 +220,11 @@ export async function importBackup(file: File): Promise<ImportReport> {
     // Backups from before 0.8 carry no cards: make them from each imported note's quick insights,
     // on the note's own schedule. A line that already has a card keeps it, so importing twice adds nothing.
     for (const n of written) report.cards += (await syncNoteCards(n, { seed: true })).created;
+    // Folders the way the 0.10 upgrade makes them: a backup from before 0.10 has none, and a note or
+    // word from any backup must have a live folder to show in. Fixed ids, so importing twice adds none.
+    const [folders, notes, words] = await Promise.all([db.folders.toArray(), db.notes.toArray(), db.vocab.toArray()]);
+    const put = planFolders(folders, notes, words, Date.now());
+    if (put.length) await db.folders.bulkPut(put);
   });
   return report;
 }

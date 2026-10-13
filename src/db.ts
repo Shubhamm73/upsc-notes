@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import { planCardSync } from './lib/cards';
+import { planFolders } from './lib/folder-plan';
 
 /** A section of a note. `doc` is editor JSON (ProseMirror/TipTap shape). */
 export interface Section {
@@ -40,6 +41,8 @@ export interface Note {
   template?: string;
   /** Optional font style for this note only (see FONT_STYLES); absent = the app's style. */
   fontStyle?: string;
+  /** Subject folder (0.10). Absent on older notes: they show under their subject's General (lib/folder-plan.ts). */
+  folderId?: string;
   nextReview: string; // YYYY-MM-DD, local date
   reviewCount: number;
   /** Index into REVIEW_INTERVALS of the last review (0.8+). Absent on older records: read via stepOf(). */
@@ -67,6 +70,28 @@ export interface Vocab {
   /** See Note.reviewStep. */
   reviewStep?: number;
   lastReviewed?: number | null;
+  /** Date folder (0.10). Absent on older words: they show under the day they were added. */
+  folderId?: string;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+}
+
+/**
+ * A folder (0.10). Notes: main subject (parent null) → subject. Words: month (parent null) → date.
+ * Deleting one marks it deleted (never erased), so a note restored from Trash brings its folder back.
+ */
+export interface Folder {
+  id: string;
+  kind: 'notes' | 'words';
+  parent: string | null;
+  name: string;
+  /** Main subjects only: a key of FOLDER_COLOURS. Subjects use their main subject's colour. */
+  colour: string | null;
+  /** Position among its siblings (notes). Months and dates sort by date, newest first. */
+  order: number;
+  /** Words: 'YYYY-MM' for a month, 'YYYY-MM-DD' for a date. */
+  date?: string;
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
@@ -118,7 +143,7 @@ export interface MetaRec {
 }
 
 export const SUBJECTS = ['GS1', 'GS2', 'GS3', 'GS4', 'Essay', 'Interview', 'Current affairs', 'PSIR'] as const;
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** Subjects that were renamed; old values are moved over on upgrade and on backup import. */
 export const RENAMED_SUBJECTS: Record<string, string> = { CSAT: 'Interview' };
@@ -129,6 +154,7 @@ class NotesDB extends Dexie {
   images!: Table<ImageRec, string>;
   meta!: Table<MetaRec, string>;
   cards!: Table<ReviewCard, string>;
+  folders!: Table<Folder, string>;
 
   constructor() {
     super('upsc-notes');
@@ -159,6 +185,16 @@ class NotesDB extends Dexie {
         const put: ReviewCard[] = [];
         for (const n of notes) if (n.insights?.items.length) put.push(...planCardSync(n, n.insights.items, [], { seed: true }).put);
         if (put.length) await tx.table('cards').bulkPut(put);
+      });
+    // v4 (0.10): folders. Only folder records are written: the 8 subjects become main subjects with
+    // one General each (plus Others), and each day that has words gets its month and date. No note
+    // or word is touched; an old note shows under its subject's General until he moves it.
+    this.version(4)
+      .stores({ ...stores, cards: 'id, noteId, due', folders: 'id, parent, kind' })
+      .upgrade(async (tx) => {
+        const [notes, words] = await Promise.all([tx.table('notes').toArray(), tx.table('vocab').toArray()]);
+        const put = planFolders([], notes as Note[], words as Vocab[], Date.now());
+        if (put.length) await tx.table('folders').bulkPut(put);
       });
   }
 }

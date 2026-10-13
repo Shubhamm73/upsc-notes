@@ -1,5 +1,6 @@
 import { Chart } from 'chart.js';
-import { db, SUBJECTS, type DocNode, type Note, type Vocab } from '../db';
+import { db, type DocNode, type Note, type Vocab } from '../db';
+import { FolderIndex } from '../lib/folders';
 import { chartConfig, PRINT_PALETTE, readChart, type ChartData } from '../editor/chart-block';
 import { collectImageIds } from '../editor/images';
 import { ymd } from '../lib/dates';
@@ -25,6 +26,7 @@ type Content = Record<string, unknown> | string | Content[];
 export type PdfScope =
   | { kind: 'section'; note: Note; sectionId: string }
   | { kind: 'note'; note: Note }
+  /** subject: a main subject's folder id, or 'All'. */
   | { kind: 'all'; subject: string | 'All'; includeVocab: boolean };
 
 // ---------------- assets ----------------
@@ -381,8 +383,11 @@ function table(n: DocNode, ctx: Ctx): Content {
 
 // ---------------- document pieces ----------------
 
+/** Folders, for where each note is filed (loaded at the start of each export). */
+let fidx = new FolderIndex([]);
+
 function noteMeta(n: Note): Content {
-  return { text: [n.subject, n.topic].filter(Boolean).join(' · '), color: MUTED, margin: [0, 0, 0, 12] };
+  return { text: [fidx.label(n), n.topic].filter(Boolean).join(' · '), color: MUTED, margin: [0, 0, 0, 12] };
 }
 
 function sectionContent(n: Note, sectionIds: string[] | null, ctx: Ctx, tocDepth: boolean): Content[] {
@@ -438,6 +443,7 @@ function vocabTable(words: Vocab[]): Content {
 const styles = {
   title: { fontSize: 22, bold: true, color: INK, margin: [0, 0, 0, 4] },
   subject: { fontSize: 18, bold: true, color: ACCENT, margin: [0, 0, 0, 12] },
+  folder: { fontSize: 14, bold: true, color: MUTED, margin: [0, 0, 0, 8] },
   noteTitle: { fontSize: 16, bold: true, color: INK, margin: [0, 8, 0, 2] },
   section: { fontSize: 13.5, bold: true, color: ACCENT, margin: [0, 10, 0, 6] },
   h2: { fontSize: 13, bold: true, margin: [0, 8, 0, 4] },
@@ -455,6 +461,7 @@ export async function buildPdf(scope: PdfScope): Promise<{ blob: Blob; filename:
   let header = 'UPSC Study Notes';
   let filename = `upsc-notes-${ymd()}.pdf`;
   let content: Content[] = [];
+  fidx = new FolderIndex(await db.folders.toArray());
 
   if (scope.kind === 'section' || scope.kind === 'note') {
     const n = scope.note;
@@ -472,33 +479,39 @@ export async function buildPdf(scope: PdfScope): Promise<{ blob: Blob; filename:
     const sec = scope.kind === 'section' ? n.sections.find((s) => s.id === scope.sectionId) : null;
     filename = `${safeName(n.title)}${sec ? '-' + safeName(sec.heading || 'section') : ''}.pdf`;
   } else {
-    const all = (await db.notes.toArray()).filter((n) => !n.deletedAt && (scope.subject === 'All' || n.subject === scope.subject));
+    const all = (await db.notes.toArray()).filter((n) => !n.deletedAt && (scope.subject === 'All' || fidx.placeOf(n).main?.id === scope.subject));
+    const scopeName = scope.subject === 'All' ? 'All subjects' : (fidx.get(scope.subject)?.name ?? 'Subject');
     const words = scope.includeVocab ? (await db.vocab.toArray()).filter((w) => !w.deletedAt).sort((a, b) => a.word.localeCompare(b.word)) : [];
     const ctx: Ctx = { images: await loadImages(all.flatMap((n) => n.sections.map((s) => s.doc))), sketches: new Map(), width: CONTENT_W };
     content = [
       { text: 'UPSC Study Notes', style: 'title', margin: [0, 160, 0, 6] },
-      { text: scope.subject === 'All' ? 'All subjects' : scope.subject, fontSize: 14, color: ACCENT },
+      { text: scopeName, fontSize: 14, color: ACCENT },
       { text: `${all.length} notes${scope.includeVocab ? ` · ${words.length} words` : ''} · exported ${new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}`, color: MUTED, margin: [0, 4, 0, 0] },
       { toc: { id: 'toc', title: { text: 'Contents', style: 'subject' } }, pageBreak: 'before' }
     ];
-    const order = [...SUBJECTS, ...new Set(all.map((n) => n.subject).filter((s) => !(SUBJECTS as readonly string[]).includes(s)))];
-    for (const subject of order) {
-      const notes = all.filter((n) => n.subject === subject).sort((a, b) => (a.topic + a.title).localeCompare(b.topic + b.title));
-      if (!notes.length) continue;
-      content.push({ text: subject, style: 'subject', tocItem: 'toc', pageBreak: 'before' });
-      notes.forEach((n, i) => {
+    // Main subject → subject → notes, in his folder order.
+    for (const { main, subjects } of fidx.subjectsByMain()) {
+      const groups = subjects
+        .map((s) => ({ s, notes: all.filter((n) => fidx.noteFolder(n) === s.id).sort((a, b) => (a.topic + a.title).localeCompare(b.topic + b.title)) }))
+        .filter((g) => g.notes.length);
+      if (!groups.length) continue;
+      content.push({ text: main.name, style: 'subject', tocItem: 'toc', pageBreak: 'before' });
+      const named = groups.length > 1 || groups[0].s.name !== 'General';
+      groups.forEach(({ s, notes }, gi) => notes.forEach((n, i) => {
+        const first = i === 0;
+        if (first && named) content.push({ text: s.name, style: 'folder', tocItem: 'toc', tocMargin: [12, 0, 0, 0], pageBreak: gi > 0 ? 'before' : undefined });
         content.push(
-          { text: n.title || 'Untitled note', style: 'noteTitle', tocItem: 'toc', tocMargin: [12, 0, 0, 0], pageBreak: i > 0 ? 'before' : undefined },
+          { text: n.title || 'Untitled note', style: 'noteTitle', tocItem: 'toc', tocMargin: [named ? 24 : 12, 0, 0, 0], pageBreak: (i > 0 || (gi > 0 && !named)) ? 'before' : undefined },
           noteMeta(n),
           ...insightsBlock(n),
           ...sectionContent(n, null, ctx, false),
           ...reflection(n)
         );
-      });
+      }));
     }
     if (words.length) content.push({ text: 'Vocabulary', style: 'subject', tocItem: 'toc', pageBreak: 'before' }, vocabTable(words));
     if (!all.length && !words.length) content.push({ text: 'Nothing to export for this choice.', color: MUTED, pageBreak: 'before' });
-    filename = `upsc-notes-${scope.subject === 'All' ? 'all' : safeName(scope.subject)}-${ymd()}.pdf`;
+    filename = `upsc-notes-${scope.subject === 'All' ? 'all' : safeName(scopeName)}-${ymd()}.pdf`;
   }
 
   const doc = {

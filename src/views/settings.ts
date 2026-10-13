@@ -1,4 +1,5 @@
-import { db, getMeta, SUBJECTS } from '../db';
+import { db, getMeta } from '../db';
+import { FolderIndex } from '../lib/folders';
 import { runPdfExport } from '../pdf/run';
 import {
   BackupError,
@@ -25,7 +26,11 @@ export function mountSettings(root: HTMLElement, ctx: AppContext): View {
   const fileInput = h('input', { type: 'file', id: 'import-file', accept: '.json,.txt,application/json,text/plain' });
   const importBtn = h('button', { type: 'button', id: 'backup-import' }, 'Import a backup file');
   const protectBtn = h('button', { type: 'button', id: 'protect' }, 'Ask the browser to protect my data');
-  const pdfSubject = h('select', { id: 'pdf-subject', 'aria-label': 'Subject to export' }, h('option', { value: 'All' }, 'All subjects'), ...SUBJECTS.map((s) => h('option', { value: s }, s)));
+  // One main subject, or all of them (filled in once the folders have loaded).
+  const pdfSubject = h('select', { id: 'pdf-subject', 'aria-label': 'Subject to export' }, h('option', { value: 'All' }, 'All subjects'));
+  void db.folders.toArray().then((rows) => {
+    for (const m of new FolderIndex(rows).roots('notes')) pdfSubject.append(h('option', { value: m.id }, m.name));
+  });
   const pdfVocab = h('input', { type: 'checkbox', id: 'pdf-vocab', checked: true });
   const pdfBtn = h('button', { type: 'button', class: 'primary', id: 'pdf-all' }, 'Export PDF');
   pdfBtn.addEventListener('click', () =>
@@ -155,7 +160,7 @@ export function mountSettings(root: HTMLElement, ctx: AppContext): View {
     importResult.textContent = 'Importing…';
     try {
       const r = await importBackup(file);
-      importResult.textContent = `Imported: ${r.added} added, ${r.updated} updated, ${r.keptNewer} already newer here, ${r.images} images, ${r.cards} review cards.`;
+      importResult.textContent = `Imported: ${r.added} added, ${r.updated} updated, ${r.keptNewer} already newer here, ${r.images} images, ${r.cards} review cards, ${r.folders} folders.`;
       ctx.toast('Import finished.');
     } catch (e) {
       importResult.textContent =

@@ -1,6 +1,7 @@
 import { liveQuery } from 'dexie';
 import { db } from '../db';
 import { h } from '../lib/h';
+import { FolderIndex } from '../lib/folders';
 import { deleteForever, emptyTrash, imageCountFor, restoreFromTrash, trashDays, type TrashKind } from '../lib/trash';
 import type { AppContext, View } from '../app';
 
@@ -65,10 +66,16 @@ export function mountTrash(root: HTMLElement, ctx: AppContext): View {
   });
 
   const sub = liveQuery(async () => {
-    const [notes, words] = await Promise.all([db.notes.filter((n) => !!n.deletedAt).toArray(), db.vocab.filter((w) => !!w.deletedAt).toArray()]);
+    const [notes, words, folders] = await Promise.all([
+      db.notes.filter((n) => !!n.deletedAt).toArray(),
+      db.vocab.filter((w) => !!w.deletedAt).toArray(),
+      db.folders.toArray()
+    ]);
+    const idx = new FolderIndex(folders);
+    const dateOf = (w: (typeof words)[number]) => idx.get(idx.wordFolder(w))?.name;
     const rows: Row[] = [
-      ...notes.map((n) => ({ kind: 'note' as const, id: n.id, title: n.title || 'Untitled note', meta: [n.subject, n.topic].filter(Boolean).join(' · '), deletedAt: n.deletedAt! })),
-      ...words.map((w) => ({ kind: 'word' as const, id: w.id, title: w.word || 'Untitled word', meta: w.meaning, deletedAt: w.deletedAt! }))
+      ...notes.map((n) => ({ kind: 'note' as const, id: n.id, title: n.title || 'Untitled note', meta: [idx.label(n), n.topic].filter(Boolean).join(' · '), deletedAt: n.deletedAt! })),
+      ...words.map((w) => ({ kind: 'word' as const, id: w.id, title: w.word || 'Untitled word', meta: [w.meaning, dateOf(w)].filter(Boolean).join(' · '), deletedAt: w.deletedAt! }))
     ];
     return rows.sort((a, b) => b.deletedAt - a.deletedAt);
   }).subscribe({ next: render, error: () => ctx.toast("Couldn't read Trash. Reload the app.") });

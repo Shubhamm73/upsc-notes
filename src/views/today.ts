@@ -1,13 +1,14 @@
 import { liveQuery } from 'dexie';
-import { db, newId, SUBJECTS, type Note, type ReviewCard, type Vocab } from '../db';
+import { db, newId, type Folder, type Note, type ReviewCard, type Vocab } from '../db';
 import { buildSession, dueItems, minutesFor, type QueueItem } from '../lib/review';
-import { ringValue, subjectRing } from '../lib/rings';
+import { ringOf, subjectRing } from '../lib/rings';
+import { FolderIndex, generalId } from '../lib/folders';
+import { subjectKeyOf } from '../lib/folder-plan';
 import { currentStreak, getLastNote } from '../lib/activity';
 import { ymd } from '../lib/dates';
 import { textToDoc } from '../lib/doc';
 import { h } from '../lib/h';
 import { icon } from '../lib/icons';
-import { subjectColor } from '../lib/subjects';
 import type { AppContext, View } from '../app';
 
 function greeting(d = new Date()) {
@@ -34,8 +35,21 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
   const ringsHost = h('div', { class: 'rings' });
 
   const captureInput = h('input', { id: 'capture', placeholder: 'RBI kept the repo rate at 6.5%. Link to inflation targeting.', autocomplete: 'off' });
-  const captureSubject = h('select', { id: 'capture-subject', 'aria-label': 'Subject for the draft' }, ...SUBJECTS.map((s) => h('option', { value: s }, s)));
-  captureSubject.value = 'Current affairs';
+  // Every subject, grouped by main subject; drafts go to Current affairs › General unless he picks another.
+  const captureSubject = h('select', { id: 'capture-subject', 'aria-label': 'Subject for the draft' });
+  let index = new FolderIndex([]);
+  let captureTouched = false;
+  captureSubject.addEventListener('change', () => (captureTouched = true));
+  const paintCapture = () => {
+    const keep = captureSubject.value;
+    captureSubject.replaceChildren(
+      ...index.subjectsByMain().map(({ main, subjects }) =>
+        h('optgroup', { label: main.name }, ...subjects.map((s) => h('option', { value: s.id }, s.name === 'General' ? `${main.name} › General` : s.name)))
+      )
+    );
+    const want = captureTouched && index.get(keep) ? keep : generalId('main:Current affairs');
+    if (index.get(want) && !index.get(want)!.deletedAt) captureSubject.value = want;
+  };
   const captureBtn = h('button', { type: 'button', class: 'primary', id: 'capture-save' }, 'Save draft');
 
   root.replaceChildren(
@@ -74,9 +88,12 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
     const now = Date.now();
     const firstLine = text.split('\n')[0];
     const title = firstLine.length > 80 ? firstLine.slice(0, 80).replace(/\s+\S*$/, '') + '…' : firstLine;
+    const sub = index.get(captureSubject.value);
+    const main = index.get(sub?.parent);
     const note: Note = {
       id: newId(),
-      subject: captureSubject.value,
+      subject: main ? subjectKeyOf(main) : 'Current affairs',
+      ...(sub && main ? { folderId: sub.id } : {}),
       topic: 'Quick capture',
       title,
       sections: [{ id: newId(), heading: 'Notes', doc: textToDoc(text) }],
@@ -91,7 +108,7 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
     };
     await db.notes.put(note);
     captureInput.value = '';
-    ctx.toast(`Saved to ${note.subject} as a draft. Open it from Notes to expand it.`);
+    ctx.toast(`Saved to ${index.label(note)} as a draft. Open it from Notes to expand it.`);
   };
   captureBtn.addEventListener('click', () => void save());
   captureInput.addEventListener('keydown', (e) => {
@@ -111,8 +128,10 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
         ? `the word “${it.word.word || 'Untitled word'}”`
         : it.note.title || 'Untitled note';
 
-  async function paint(notes: Note[], words: Vocab[], cards: ReviewCard[]) {
+  async function paint(notes: Note[], words: Vocab[], cards: ReviewCard[], folders: Folder[]) {
     const today = ymd();
+    index = new FolderIndex(folders);
+    paintCapture();
     const liveNotes = notes.filter((n) => !n.deletedAt);
     const due = dueItems(notes, words, cards, today);
     const count = (t: QueueItem['type']) => due.filter((i) => i.type === t).length;
@@ -167,7 +186,7 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
       const marks = last.insights?.items.length ?? 0;
       continueHost.replaceChildren(
         h('p', { class: 'eyebrow' }, 'Continue writing'),
-        h('div', { class: 'chip-row' }, h('span', { class: 'subject-tag' }, h('span', { class: 'dot', style: `background: ${subjectColor(last.subject)}` }), last.subject), last.topic ? h('span', { class: 'meta' }, last.topic) : null),
+        h('div', { class: 'chip-row' }, h('span', { class: 'subject-tag' }, h('span', { class: 'dot', style: `background: ${index.noteColour(last)}` }), index.label(last)), last.topic ? h('span', { class: 'meta' }, last.topic) : null),
         h('h3', { class: 'continue-title' }, last.title || 'Untitled note'),
         h(
           'p',
@@ -188,12 +207,23 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
       );
     }
 
-    // Subject rings: share of a subject's notes that are reviewed and not overdue
-    ringsHost.replaceChildren(...SUBJECTS.map((s) => subjectRing(s, ringValue(liveNotes, s, today), { href: `#/notes/s/${encodeURIComponent(s)}` })));
+    // Subject rings, one per main subject: share of its notes that are reviewed and not overdue.
+    // Others shows only when something is in it.
+    const byMain = new Map<string, Note[]>();
+    for (const n of liveNotes) {
+      const m = index.placeOf(n).main?.id;
+      if (m) byMain.set(m, [...(byMain.get(m) ?? []), n]);
+    }
+    ringsHost.replaceChildren(
+      ...index
+        .roots('notes')
+        .filter((m) => m.id !== 'main:Others' || byMain.has(m.id))
+        .map((m) => subjectRing(m.name, ringOf(byMain.get(m.id) ?? [], today), { colour: index.colour(m), href: `#/notes/f/${encodeURIComponent(m.id)}` }))
+    );
   }
 
-  const sub = liveQuery(() => Promise.all([db.notes.toArray(), db.vocab.toArray(), db.cards.where('due').belowOrEqual(ymd()).toArray()])).subscribe({
-    next: ([n, w, c]) => void paint(n, w, c),
+  const sub = liveQuery(() => Promise.all([db.notes.toArray(), db.vocab.toArray(), db.cards.where('due').belowOrEqual(ymd()).toArray(), db.folders.toArray()])).subscribe({
+    next: ([n, w, c, f]) => void paint(n, w, c, f),
     error: () => ctx.toast("Couldn't read your notes. Reload the app.")
   });
 

@@ -1,6 +1,6 @@
 import { liveQuery, type Subscription } from 'dexie';
 import type { Editor } from '@tiptap/core';
-import { db, newId, SUBJECTS, type DocNode, type Note, type Section, type Vocab } from '../db';
+import { db, newId, type DocNode, type Folder, type Note, type Section, type Vocab } from '../db';
 import { docToText, noteSearchText, textToDoc, wordCount } from '../lib/doc';
 import { createEditor } from '../editor/editor';
 import { createCanvasTools, reducedMotion } from '../editor/tools';
@@ -9,7 +9,11 @@ import { runPdfExport } from '../pdf/run';
 import { extractInsights, groupInsights, sectionKeyLines } from '../lib/insights';
 import { logReviewDay, milestoneText, setLastNote } from '../lib/activity';
 import { reviewNote } from '../lib/review';
-import { subjectColor } from '../lib/subjects';
+import { ringOf } from '../lib/rings';
+import { FOLDER_COLOURS, subjectKeyOf } from '../lib/folder-plan';
+import { addMain, addSubject, canDelete, deleteFolder, folderContents, FolderIndex, homeFor, renameFolder, reorderFolders, setLastFolder } from '../lib/folders';
+import { openSheet } from '../lib/sheet';
+import { ago, crumbs, field, folderGrid, plural, type CardSpec } from './folder-ui';
 import { celebrationsOn, FONT_STYLES, getPageWidth, outlineShown, setOutlineShown, setPageWidth } from '../lib/prefs';
 import { NoteHistory } from '../editor/history';
 import { TEMPLATES, templateOf } from '../lib/templates';
@@ -19,17 +23,27 @@ import { h } from '../lib/h';
 import { icon } from '../lib/icons';
 import type { AppContext, View } from '../app';
 
-type Mode = 'all' | 'due';
-
 /** GS answer meter: marks at 150 and 250 words; the bar is full at 300. */
 const METER_MAX = 300;
 
-function blankNote(subject: string, templateId: string): Note {
+/** Subjects offered when he adds one (a tap fills the name). */
+const SUGGESTIONS: Record<string, string[]> = {
+  'main:GS1': ['History', 'Art & Culture', 'Geography', 'Society'],
+  'main:GS2': ['Polity', 'Governance', 'Social Justice', 'International Relations'],
+  'main:GS3': ['Economy', 'Agriculture', 'Environment', 'Science & Tech', 'Security', 'Disaster Management'],
+  'main:GS4': ['Ethics concepts', 'Thinkers', 'Case studies'],
+  'main:Essay': ['Essay outlines', 'Quotes'],
+  'main:Interview': ['DAF', 'Current issues'],
+  'main:Current affairs': ['Schemes', 'Reports & indices'],
+  'main:PSIR': ['Political theory', 'Indian politics', 'Comparative politics', 'International relations']
+};
+
+function blankNote(place: { folderId?: string; subject: string }, templateId: string): Note {
   const now = Date.now();
   const t = templateOf(templateId);
   const note: Note = {
     id: newId(),
-    subject,
+    ...place,
     topic: '',
     title: '',
     sections: t.sections.map((heading) => ({ id: newId(), heading, doc: textToDoc('') })),
@@ -58,11 +72,10 @@ function saveErrorText(e: unknown): string {
   return "Couldn't save just now. Retrying in a few seconds. Your text is still on screen.";
 }
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
 export function mountNotes(root: HTMLElement, ctx: AppContext): View {
-  const filter = { subject: 'All', q: '', mode: 'all' as Mode };
+  const filter = { q: '' };
   let notes: Note[] = [];
+  let index = new FolderIndex([]);
   let draft: Note | null = null;
   let isNew = false;
   let dirty = false;
@@ -107,6 +120,8 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     setSave(state: 'editing' | 'saved' | 'error'): void;
     live(): void;
     setFocus(on: boolean): void;
+    /** Repaints where the note is filed (folders renamed, recoloured or loaded). */
+    place(): void;
   } | null = null;
 
   function destroyEditors() {
@@ -172,66 +187,27 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   // Capture phase: runs before the editor, which would otherwise swallow Esc.
   document.addEventListener('keydown', onKey, true);
 
-  // ---------- layout ----------
+  // ---------- layout: browsing folders (Notes › main subject › subject) ----------
   const listEl = h('ul', { class: 'note-list', id: 'note-list' });
-  const dueEl = h('span', { class: 'due-count' });
   const search = h('input', { id: 'search', type: 'search', placeholder: 'Search notes and vocabulary', 'aria-label': 'Search notes and vocabulary' });
-  const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Subject' });
-  const modeAll = h('button', { type: 'button', 'aria-pressed': 'true' }, 'All notes');
-  const modeDue = h('button', { type: 'button', 'aria-pressed': 'false' }, 'Due today');
-  const newBtn = h('button', { type: 'button', class: 'primary', id: 'new-note' }, 'New note');
-
-  const side = h(
-    'aside',
-    { class: 'pane-list' },
-    h('div', { class: 'list-head' }, h('h1', {}, 'Notes'), dueEl),
-    search,
-    chips,
-    h('div', { class: 'seg', role: 'group', 'aria-label': 'Show' }, modeAll, modeDue),
-    newBtn,
-    listEl
-  );
+  const side = h('aside', { class: 'pane-list browse', 'aria-label': 'Notes' });
   const editorEl = h('section', { class: 'pane-editor', 'aria-label': 'Note' });
   // Remember where the tapped card was, so the note can grow out of it (240 ms).
-  listEl.addEventListener('click', (e) => {
+  side.addEventListener('click', (e) => {
     const card = (e.target as HTMLElement).closest('a.note-card:not(.word-card)');
     openFrom = card ? card.getBoundingClientRect() : null;
   });
   const wrap = h('div', { class: 'notes-layout is-notes' }, side, editorEl);
   root.replaceChildren(wrap);
 
-  for (const s of ['All', ...SUBJECTS]) {
-    const b = h(
-      'button',
-      { type: 'button', class: 'subject-chip', 'data-s': s, 'aria-pressed': String(s === 'All') },
-      s === 'All' ? null : h('span', { class: 'dot', style: `background: ${subjectColor(s)}` }),
-      s === 'All' ? 'All subjects' : s
-    );
-    b.addEventListener('click', () => setSubject(s));
-    chips.append(b);
-  }
-  function setSubject(s: string) {
-    filter.subject = s;
-    for (const c of chips.children) c.setAttribute('aria-pressed', String((c as HTMLElement).dataset.s === s));
-    renderList();
-  }
+  /** Where the browser is: the main subjects, one folder (main subject or subject), or the due list. */
+  let where: { level: 'root' } | { level: 'folder'; id: string } | { level: 'due' } = { level: 'root' };
+  let editMode = false;
+  /** A subject he just opened becomes "the last subject used" (where New note goes from elsewhere). */
+  let visiting: string | null = null;
   search.addEventListener('input', () => {
     filter.q = search.value.trim().toLowerCase();
     renderList();
-  });
-  const setMode = (m: Mode) => {
-    filter.mode = m;
-    modeAll.setAttribute('aria-pressed', String(m === 'all'));
-    modeDue.setAttribute('aria-pressed', String(m === 'due'));
-    renderList();
-  };
-  modeAll.addEventListener('click', () => setMode('all'));
-  modeDue.addEventListener('click', () => setMode('due'));
-  newBtn.addEventListener('click', () => {
-    if (location.hash === '#/n/new') return; // already on a fresh one
-    for (const ed of editors.values()) ed.setEditable(false, false); // false: no 'update' event, so leaving a note never re-saves it
-    editorEl.replaceChildren(); // the previous note leaves at once; its unsaved text is still saved from memory
-    ctx.go('#/n/new');
   });
 
   let words: Vocab[] = [];
@@ -249,78 +225,324 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     },
     error: () => ctx.toast("Couldn't read your notes. Reload the app.")
   });
+  const folderSub = liveQuery(() => db.folders.toArray()).subscribe({
+    next: (rows) => {
+      index = new FolderIndex(rows);
+      renderList();
+      canvas?.place();
+    }
+  });
+
+  const folderHref = (id: string) => `#/notes/f/${encodeURIComponent(id)}`;
+  const placeLabel = (id: string) => {
+    const f = index.get(id);
+    const m = index.get(f?.parent);
+    return f && m ? `${m.name} › ${f.name}` : 'GS1 › General';
+  };
+  const notesIn = (ids: Set<string>) => notes.filter((n) => ids.has(index.noteFolder(n)));
+
+  function noteCard(n: Note, today: string, extraClass = '') {
+    const isDue = n.nextReview <= today;
+    return h(
+      'li',
+      {},
+      h(
+        'a',
+        { class: `note-card${extraClass}`, href: `#/n/${n.id}`, 'aria-current': draft?.id === n.id ? 'true' : undefined },
+        h('strong', {}, n.title || 'Untitled note'),
+        h('span', { class: 'meta' }, h('span', { class: 'dot', style: `background: ${index.noteColour(n)}` }), [index.label(n), n.topic].filter(Boolean).join(' · ')),
+        h(
+          'span',
+          { class: isDue ? 'meta due' : 'meta' },
+          (isDue ? 'Review today' : `Next review ${prettyDate(n.nextReview)}`) +
+            (n.insights?.items.length ? ` · ${n.insights.items.length} quick ${n.insights.items.length === 1 ? 'insight' : 'insights'}` : '')
+        )
+      )
+    );
+  }
 
   // ---------- list ----------
   function renderList() {
     const today = ymd();
-    let items = notes;
-    if (filter.mode === 'due') items = items.filter((n) => n.nextReview <= today);
-    if (filter.subject !== 'All') items = items.filter((n) => n.subject === filter.subject);
-    if (filter.q) {
-      items = items.filter((n) =>
-        noteSearchText(n).includes(filter.q)
+    const due = notes.filter((n) => n.nextReview <= today);
+    let folder = where.level === 'folder' ? index.get(where.id) : undefined;
+    if (where.level === 'folder' && folder && (folder.deletedAt || folder.kind !== 'notes')) folder = undefined;
+    const main = folder ? (folder.parent ? index.get(folder.parent) : folder) : undefined;
+    const isSubject = !!folder?.parent;
+    const colour = folder ? index.colour(folder) : '';
+
+    // breadcrumb and heading
+    const path = [{ label: 'Notes', href: '#/notes' }];
+    if (where.level === 'due') path.push({ label: 'Due today', href: '#/notes/due' });
+    if (main) path.push({ label: main.name, href: folderHref(main.id) });
+    if (folder && isSubject) path.push({ label: folder.name, href: folderHref(folder.id) });
+    const title = h('h1', { style: folder ? `color: ${colour}` : undefined }, where.level === 'due' ? 'Due today' : folder ? folder.name : 'Notes');
+    const head = h('div', { class: 'browse-head' }, title, h('span', { class: 'spacer' }));
+    const canEdit = where.level === 'root' || (folder && !isSubject);
+    if (where.level === 'root') {
+      head.append(
+        h('a', { class: `due-count${due.length ? ' is-due' : ''}`, href: '#/notes/due', id: 'due-link' }, due.length ? `${due.length} due today` : 'Nothing due today')
       );
     }
-    items = [...items].sort((a, b) =>
-      filter.mode === 'due' ? a.nextReview.localeCompare(b.nextReview) : b.updatedAt - a.updatedAt
-    );
-
-    const due = notes.filter((n) => n.nextReview <= today).length;
-    dueEl.textContent = due ? `${due} due today` : 'Nothing due today';
-    dueEl.classList.toggle('is-due', due > 0);
-
+    if (canEdit) {
+      const editBtn = h('button', { type: 'button', id: 'folder-edit', 'aria-pressed': String(editMode) }, icon(editMode ? 'check' : 'edit', 20), editMode ? 'Done' : 'Edit');
+      editBtn.addEventListener('click', () => {
+        editMode = !editMode;
+        renderList();
+      });
+      head.append(editBtn);
+    }
+    const newBtn = h('button', { type: 'button', class: `primary${isSubject ? ' big' : ''}`, id: 'new-note' }, icon('plus', 20), 'New note');
+    newBtn.addEventListener('click', () => {
+      if (isSubject && folder) setLastFolder(folder.id);
+      if (location.hash === '#/n/new') return; // already on a fresh one
+      for (const ed of editors.values()) ed.setEditable(false, false); // false: no 'update' event, so leaving a note never re-saves it
+      editorEl.replaceChildren(); // the previous note leaves at once; its unsaved text is still saved from memory
+      ctx.go('#/n/new');
+    });
+    head.append(newBtn);
+    const parts: HTMLElement[] = [crumbs(path), head];
     listEl.replaceChildren();
+
+    if (where.level === 'folder' && !folder) {
+      parts.push(h('p', { class: 'empty-row' }, index.byId.size ? "This folder isn't here any more. " : 'Loading… ', h('a', { href: '#/notes' }, 'All subjects')));
+    } else if (where.level === 'root') {
+      parts.push(search);
+      if (filter.q) {
+        renderSearch(today);
+        parts.push(listEl);
+      } else {
+        const recent = [...notes].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
+        if (recent.length) parts.push(h('section', { class: 'recent', 'aria-label': 'Recent notes' }, h('h2', { class: 'eyebrow' }, 'Recent'), h('ul', { class: 'recent-row', id: 'recent' }, ...recent.map((n) => noteCard(n, today, ' recent-card')))));
+        parts.push(mainGrid(today));
+      }
+    } else if (where.level === 'due') {
+      for (const n of [...due].sort((a, b) => a.nextReview.localeCompare(b.nextReview))) listEl.append(noteCard(n, today));
+      if (!due.length) listEl.append(h('li', { class: 'empty-row' }, 'Nothing due for review today.'));
+      parts.push(listEl);
+    } else if (folder && !isSubject) {
+      const subs = index.children(folder.id);
+      parts.push(h('p', { class: 'meta browse-meta' }, `${plural(notesIn(new Set(subs.map((s) => s.id))).length, 'note')} in ${plural(subs.length, 'subject')}${editMode ? ' · drag the handle to reorder' : ''}`));
+      parts.push(subjectGrid(folder, subs, today));
+    } else if (folder) {
+      if (visiting === folder.id) {
+        setLastFolder(folder.id);
+        visiting = null;
+      }
+      const list = notesIn(new Set([folder.id])).sort((a, b) => b.updatedAt - a.updatedAt);
+      const start = h('div', { class: 'tpl-row' }, h('span', { class: 'meta' }, 'Start from:'));
+      for (const t of TEMPLATES) start.append(h('a', { class: 'chip-link', href: `#/n/new/${t.id}`, 'data-template': t.id }, t.name));
+      parts.push(start);
+      for (const n of list) listEl.append(noteCard(n, today));
+      if (!list.length) listEl.append(h('li', { class: 'empty-row' }, `No notes in ${folder.name} yet. Tap New note, or pick a template above.`));
+      parts.push(listEl);
+    }
+    side.replaceChildren(...parts);
+  }
+
+  function renderSearch(today: string) {
+    const items = notes.filter((n) => noteSearchText(n).includes(filter.q) || index.label(n).toLowerCase().includes(filter.q)).sort((a, b) => b.updatedAt - a.updatedAt);
     // Search also covers vocabulary, listed under the notes.
-    const wordHits = filter.q
-      ? words
-          .filter((w) => [w.word, w.meaning, ...w.synonyms, ...w.antonyms, ...w.uses.map((u) => u.sentence)].join(' ').toLowerCase().includes(filter.q))
-          .sort((a, b) => a.word.localeCompare(b.word))
-      : [];
-    const appendWords = () => {
-      if (!wordHits.length) return;
+    const wordHits = words
+      .filter((w) => [w.word, w.meaning, ...w.synonyms, ...w.antonyms, ...w.uses.map((u) => u.sentence)].join(' ').toLowerCase().includes(filter.q))
+      .sort((a, b) => a.word.localeCompare(b.word));
+    for (const n of items) listEl.append(noteCard(n, today));
+    if (!items.length) listEl.append(h('li', { class: 'empty-row' }, wordHits.length ? 'No notes match. Matching words:' : 'No notes match this search.'));
+    if (wordHits.length) {
       listEl.append(h('li', { class: 'list-divider' }, `Vocabulary · ${wordHits.length}`));
       for (const w of wordHits) {
-        listEl.append(
-          h('li', {}, h('a', { class: 'note-card word-card', href: `#/v/${w.id}` }, h('strong', {}, w.word || 'Untitled word'), h('span', { class: 'meta' }, w.meaning || '—')))
-        );
+        listEl.append(h('li', {}, h('a', { class: 'note-card word-card', href: `#/v/${w.id}` }, h('strong', {}, w.word || 'Untitled word'), h('span', { class: 'meta' }, w.meaning || '—'))));
       }
+    }
+  }
+
+    /** Badge on a main subject's card: GS1, CA (Current affairs), ES (Essay). */
+  const shortLabel = (name: string) => {
+    if (name.length <= 3) return name;
+    const words = name.replace(/[^\p{L}\p{N} ]/gu, '').split(/\s+/).filter(Boolean);
+    return (words.length > 1 ? words.map((w) => w[0]).join('') : name).slice(0, 2).toUpperCase();
+  };
+
+  function mainGrid(today: string) {
+    const cards: CardSpec[] = index.roots('notes').map((m) => {
+      const subs = index.children(m.id);
+      const list = notesIn(new Set(subs.map((s) => s.id)));
+      return {
+        id: m.id,
+        href: folderHref(m.id),
+        name: m.name,
+        colour: index.colour(m),
+        badge: shortLabel(m.name),
+        sub: subs.map((s) => s.name).join(', ') || 'No subjects yet',
+        count: plural(list.length, 'note'),
+        due: list.filter((n) => n.nextReview <= today).length,
+        pct: ringOf(list, today),
+        deletable: canDelete(index, m)
+      };
+    });
+    return folderGrid({
+      cards,
+      editing: editMode,
+      addLabel: 'Add main subject',
+      onAdd: addMainDialog,
+      onRename: (id, name) => void renameFolder(id, name),
+      onDelete: (id) => void deleteDialog(id),
+      onReorder: (ids) => void reorderFolders(ids)
+    });
+  }
+
+  function subjectGrid(main: Folder, subs: Folder[], today: string) {
+    const cards: CardSpec[] = subs.map((s) => {
+      const list = notesIn(new Set([s.id]));
+      const last = list.reduce((m, n) => Math.max(m, n.updatedAt), 0);
+      return {
+        id: s.id,
+        href: folderHref(s.id),
+        name: s.name,
+        colour: index.colour(main),
+        badge: icon('folder', 22),
+        sub: last ? `Last edited ${ago(last)}` : 'No notes yet',
+        count: plural(list.length, 'note'),
+        due: list.filter((n) => n.nextReview <= today).length,
+        pct: ringOf(list, today),
+        deletable: canDelete(index, s)
+      };
+    });
+    return folderGrid({
+      cards,
+      editing: editMode,
+      addLabel: 'Add subject',
+      onAdd: () => addSubjectDialog(main),
+      onRename: (id, name) => void renameFolder(id, name),
+      onDelete: (id) => void deleteDialog(id),
+      onReorder: (ids) => void reorderFolders(ids)
+    });
+  }
+
+  function addMainDialog() {
+    const name = h('input', { id: 'folder-name', placeholder: 'e.g. Prelims', maxlength: 60, autocomplete: 'off' });
+    let colour = FOLDER_COLOURS.find((c) => !index.roots('notes').some((m) => m.colour === c)) ?? 'blue';
+    const swatches = h('div', { class: 'swatches', role: 'group', 'aria-label': 'Colour' });
+    const paint = () => {
+      for (const b of swatches.children) b.setAttribute('aria-pressed', String((b as HTMLElement).dataset.colour === colour));
     };
-    if (!items.length) {
-      if (wordHits.length) {
-        listEl.append(h('li', { class: 'empty-row' }, 'No notes match. Matching words:'));
-        appendWords();
-        return;
-      }
-      const msg = !notes.length
-        ? 'No notes yet. Tap New note and write one concept you understood today.'
-        : filter.mode === 'due'
-          ? 'Nothing due for review today.'
-          : 'No notes match this filter.';
-      listEl.append(h('li', { class: 'empty-row' }, msg));
-      return;
+    FOLDER_COLOURS.forEach((c, i) => {
+      const b = h('button', { type: 'button', class: 'swatch', 'data-colour': c, style: `--c: var(--sub-${c})`, 'aria-label': `Colour ${i + 1}` });
+      b.addEventListener('click', () => {
+        colour = c;
+        paint();
+      });
+      swatches.append(b);
+    });
+    paint();
+    openSheet({
+      title: 'Add main subject',
+      id: 'folder-dialog',
+      body: [field('Name', name), h('span', { class: 'sheet-label' }, 'Colour'), swatches, h('p', { class: 'meta' }, 'It starts with one subject, General. Add more inside it.')],
+      actions: [
+        { label: 'Cancel' },
+        {
+          label: 'Add',
+          id: 'folder-save',
+          primary: true,
+          run: async () => {
+            const v = name.value.trim();
+            if (!v) {
+              name.focus();
+              return false;
+            }
+            await addMain(v, colour);
+          }
+        }
+      ]
+    });
+  }
+
+  function addSubjectDialog(main: Folder) {
+    const name = h('input', { id: 'folder-name', placeholder: 'e.g. History', maxlength: 60, autocomplete: 'off' });
+    const have = new Set(index.children(main.id).map((s) => s.name.toLowerCase()));
+    const ideas = (SUGGESTIONS[main.id] ?? []).filter((s) => !have.has(s.toLowerCase()));
+    const chipsEl = h('div', { class: 'suggest' });
+    for (const s of ideas) {
+      const b = h('button', { type: 'button', class: 'chip-btn' }, s);
+      b.addEventListener('click', () => {
+        name.value = s;
+        name.focus();
+      });
+      chipsEl.append(b);
     }
-    for (const n of items) {
-      const isDue = n.nextReview <= today;
-      listEl.append(
+    openSheet({
+      title: `Add subject to ${main.name}`,
+      id: 'folder-dialog',
+      body: [field('Name', name), ...(ideas.length ? [h('span', { class: 'sheet-label' }, 'Ideas'), chipsEl] : [])],
+      actions: [
+        { label: 'Cancel' },
+        {
+          label: 'Add',
+          id: 'folder-save',
+          primary: true,
+          run: async () => {
+            const v = name.value.trim();
+            if (!v) {
+              name.focus();
+              return false;
+            }
+            await addSubject(main.id, v);
+          }
+        }
+      ]
+    });
+  }
+
+  async function deleteDialog(id: string) {
+    const f = index.get(id);
+    if (!f) return;
+    const c = await folderContents(id);
+    const what = [c.subfolders ? plural(c.subfolders, 'subject') : '', plural(c.notes, 'note')].filter(Boolean).join(' and ');
+    const one = c.subfolders + c.notes === 1;
+    openSheet({
+      title: `Delete “${f.name}”?`,
+      id: 'folder-delete',
+      body: [
         h(
-          'li',
+          'p',
           {},
-          h(
-            'a',
-            { class: 'note-card', href: `#/n/${n.id}`, 'aria-current': draft?.id === n.id ? 'true' : undefined },
-            h('strong', {}, n.title || 'Untitled note'),
-            h('span', { class: 'meta' }, h('span', { class: 'dot', style: `background: ${subjectColor(n.subject)}` }), [n.subject, n.topic].filter(Boolean).join(' · ')),
-            h(
-              'span',
-              { class: isDue ? 'meta due' : 'meta' },
-              (isDue ? 'Review today' : `Next review ${prettyDate(n.nextReview)}`) +
-                (n.insights?.items.length ? ` · ${n.insights.items.length} quick ${n.insights.items.length === 1 ? 'insight' : 'insights'}` : '')
-            )
-          )
+          c.notes || c.subfolders
+            ? `Its ${what} ${one ? 'goes' : 'go'} to Trash. You can restore ${one ? 'it' : 'them'} for 30 days. Nothing is deleted for good from here.`
+            : 'It has no notes. You can make it again any time.'
         )
-      );
+      ],
+      actions: [
+        { label: 'Cancel' },
+        {
+          label: 'Move to Trash',
+          id: 'folder-delete-confirm',
+          danger: true,
+          run: async () => {
+            const r = await deleteFolder(id);
+            ctx.toast(r.notes ? `Deleted “${f.name}”. ${plural(r.notes, 'note')} ${r.notes === 1 ? 'is' : 'are'} in Trash for 30 days.` : `Deleted “${f.name}”.`);
+          }
+        }
+      ]
+    });
+  }
+
+  /** Move to…: every subject, grouped by main subject. */
+  function moveSheet(current: string, pick: (id: string) => void) {
+    const list = h('div', { class: 'sheet-list move-list' });
+    for (const { main, subjects } of index.subjectsByMain()) {
+      const row = h('div', { class: 'move-subs' });
+      list.append(h('div', { class: 'move-group' }, h('h3', { class: 'move-main' }, h('span', { class: 'dot', style: `background: ${index.colour(main)}` }), main.name), row));
+      for (const s of subjects) {
+        const b = h('button', { type: 'button', class: 'move-opt', 'data-folder': s.id, 'aria-current': s.id === current ? 'true' : undefined }, s.name, s.id === current ? icon('check', 18) : null);
+        b.addEventListener('click', () => {
+          close();
+          if (s.id !== current) pick(s.id);
+        });
+        row.append(b);
+      }
     }
-    appendWords();
+    const close = openSheet({ title: 'Move to…', id: 'move-sheet', body: [list], actions: [{ label: 'Cancel' }] });
   }
 
   // ---------- saving ----------
@@ -402,6 +624,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         h('a', { class: 'back-link', href: '#/notes' }, icon('back', 18), 'Notes'),
         h('h1', {}, 'New note'),
         h('p', { class: 'meta' }, 'Pick a shape for this note. You can change it later from the chip under the title.'),
+        h('p', { class: 'meta', id: 'new-place' }, `It goes in ${placeLabel(homeFor(index))}. Move it any time from the chip under the title.`),
         h('div', { class: 'tpl-grid' }, ...cards)
       )
     );
@@ -410,7 +633,9 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
 
   function startNew(templateId: string) {
     isNew = true;
-    renderEditor(blankNote(filter.subject !== 'All' ? filter.subject : SUBJECTS[0], templateId));
+    const folderId = homeFor(index);
+    const main = index.get(index.get(folderId)?.parent);
+    renderEditor(blankNote(main ? { folderId, subject: subjectKeyOf(main) } : { subject: 'GS1' }, templateId));
     ctx.status('New note');
   }
 
@@ -425,7 +650,10 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
 
     // header
     const headMeta = h('span', { class: 'head-meta' });
-    const paintHeadMeta = () => (headMeta.textContent = [d.subject, d.topic.trim()].filter(Boolean).join(' · '));
+    // ← goes up one level: to the note's subject
+    const backText = h('span', {}, 'Notes');
+    const backLink = h('a', { class: 'back-link', id: 'note-back', href: '#/notes' }, icon('back', 18), backText);
+    const paintHeadMeta = () => (headMeta.textContent = d.topic.trim());
     const saveEl = h('span', { class: 'save-state', id: 'save-state', 'aria-hidden': 'true' }, h('span', { class: 'save-dot' }), h('span', { class: 'save-label' }));
     const keyPill = h('span', { class: 'key-pill', id: 'keyline-count' });
     const meterFill = h('span', { class: 'meter-fill' });
@@ -459,7 +687,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       h(
         'div',
         { class: 'head-row' },
-        h('a', { class: 'back-link', href: '#/notes' }, icon('back', 18), 'Notes'),
+        backLink,
         headMeta,
         h('span', { class: 'spacer' }),
         keyPill,
@@ -483,9 +711,8 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       title.style.height = `${title.scrollHeight}px`;
     };
     const subjDot = h('span', { class: 'dot' });
-    const subject = h('select', { id: 'f-subject', class: 'chip-select', 'aria-label': 'Subject' }, ...SUBJECTS.map((s) => h('option', { value: s }, s)));
-    if (!(SUBJECTS as readonly string[]).includes(d.subject)) subject.append(h('option', { value: d.subject }, d.subject));
-    subject.value = d.subject;
+    const subjText = h('span', {});
+    const subject = h('button', { type: 'button', id: 'f-subject', class: 'chip-select chip-place', 'aria-haspopup': 'dialog', title: 'Move to another subject' }, subjDot, subjText);
     const topic = h('input', { id: 'f-topic', class: 'chip-input', placeholder: 'Add topic', 'aria-label': 'Topic', value: d.topic });
     const sizeTopic = () => (topic.size = Math.max(9, Math.min(40, topic.value.length + 1)));
     const template = h(
@@ -498,12 +725,19 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     const chips = h(
       'div',
       { class: 'canvas-chips' },
-      h('label', { class: 'chip-wrap subject-wrap' }, subjDot, subject),
+      h('span', { class: 'chip-wrap subject-wrap' }, subject),
       h('label', { class: 'chip-wrap' }, topic),
       h('label', { class: 'chip-wrap template-wrap' }, template),
       reviewInfo
     );
-    const paintSubject = () => (subjDot.style.background = subjectColor(d.subject));
+    const paintSubject = () => {
+      const { sub } = index.placeOf(d);
+      subjDot.style.background = index.noteColour(d);
+      subjText.textContent = index.label(d);
+      subject.setAttribute('aria-label', `Subject: ${index.label(d)}. Move to…`);
+      backLink.href = sub ? folderHref(sub.id) : '#/notes';
+      backText.textContent = sub ? index.label(d) : 'Notes';
+    };
 
     // quick insights
     const insightsHost = h('div', { class: 'insights-host', id: 'insights' });
@@ -975,18 +1209,27 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         editors.get(d.sections[0]?.id)?.commands.focus('start');
       }
     });
-    const setSubject = (v: unknown) => {
-      d.subject = String(v);
-      subject.value = d.subject;
+    // Move to…: files the note under another subject (one Undo step).
+    const setPlace = (p: { folderId?: string; subject: string }) => {
+      if (p.folderId) d.folderId = p.folderId;
+      else delete d.folderId;
+      d.subject = p.subject;
       paintSubject();
       paintHeadMeta();
       schedule();
     };
-    subject.addEventListener('change', () => {
-      const before = d.subject;
-      setSubject(subject.value);
-      noteHist.field('subject', before, d.subject, setSubject);
-    });
+    const moveTo = () =>
+      moveSheet(index.noteFolder(d), (id) => {
+        const main = index.get(index.get(id)?.parent);
+        if (!main) return;
+        const was = { folderId: d.folderId, subject: d.subject };
+        const now = { folderId: id, subject: subjectKeyOf(main) };
+        setPlace(now);
+        setLastFolder(id);
+        noteHist.op(() => setPlace(was), () => setPlace(now));
+        ctx.toast(`Moved to ${placeLabel(id)}.`);
+      });
+    subject.addEventListener('click', moveTo);
     topic.addEventListener('input', () => {
       const before = d.topic;
       d.topic = topic.value;
@@ -1069,7 +1312,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       dirty = true;
       await save();
       ctx.toast(`Moved “${d.title || 'Untitled note'}” to Trash. Restore it from Trash if you need it.`);
-      ctx.go('#/notes');
+      ctx.go(backLink.getAttribute('href') ?? '#/notes');
     };
     trashBtn.addEventListener('click', () => void toTrash());
     focusBtn.addEventListener('click', () => setFocusMode(!focusMode));
@@ -1078,6 +1321,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       openPopover(
         moreBtn,
         [
+          { label: 'Move to…', aria: 'Move to', run: moveTo },
           { label: 'Export note as PDF', run: () => void runPdfExport({ kind: 'note', note: structuredClone(d) }, ctx) },
           { label: 'Focus mode (Ctrl + .)', run: () => setFocusMode(true) },
           {
@@ -1168,6 +1412,10 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       setFocus(on) {
         focusBtn.setAttribute('aria-pressed', String(on));
         if (on) (editors.get(activeSection ?? '') ?? editors.values().next().value)?.commands.focus();
+      },
+      place() {
+        paintSubject();
+        paintHeadMeta();
       }
     };
 
@@ -1232,7 +1480,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
           { class: 'editor-empty' },
           h('h2', {}, 'Note not found'),
           h('p', {}, "This note isn't on this tablet."),
-          h('a', { href: '#/notes' }, 'Back to all notes')
+          h('a', { href: '#/notes' }, 'Back to Notes')
         )
       );
       return;
@@ -1244,10 +1492,25 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
 
   return {
     route(parts) {
-      if (parts[0] === 'notes' && parts[1] === 'due') setMode('due');
-      if (parts[0] === 'notes' && parts[1] === 's' && parts[2]) {
-        setMode('all');
-        setSubject(decodeURIComponent(parts[2]));
+      if (parts[0] === 'notes') {
+        const next: typeof where =
+          parts[1] === 'due'
+            ? { level: 'due' }
+            : parts[1] === 'f' && parts[2]
+              ? { level: 'folder', id: decodeURIComponent(parts[2]) }
+              : parts[1] === 's' && parts[2] // 0.6–0.9 links (Today's rings): a subject is now a main subject
+                ? { level: 'folder', id: `main:${decodeURIComponent(parts[2])}` }
+                : { level: 'root' };
+        if (JSON.stringify(next) !== JSON.stringify(where)) {
+          where = next;
+          editMode = false;
+          visiting = next.level === 'folder' ? next.id : null;
+          window.scrollTo(0, 0);
+          if (search.value) {
+            search.value = '';
+            filter.q = '';
+          }
+        }
       }
       void open(parts[0] === 'n' && parts[1] ? parts[1] : null, parts[2]);
     },
@@ -1259,6 +1522,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       clearTimeout(retry);
       sub?.unsubscribe();
       vocabSub.unsubscribe();
+      folderSub.unsubscribe();
       tools.destroy();
       document.removeEventListener('keydown', onKey, true);
       document.body.classList.remove('editing');

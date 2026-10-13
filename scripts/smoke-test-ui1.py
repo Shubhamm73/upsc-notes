@@ -32,7 +32,8 @@ with sync_playwright() as p:
 
     # ---- quick capture ----
     page.fill("#capture", "RBI kept the repo rate at 6.5%. Link to inflation targeting.")
-    page.select_option("#capture-subject", "GS3")
+    page.wait_for_selector("#capture-subject option[value='gen:GS3']", state="attached")
+    page.select_option("#capture-subject", "gen:GS3")  # 0.10: subjects are folders (GS3 › General)
     page.click("#capture-save")
     expect(page.locator(".today-title")).to_contain_text("1 thing is due", timeout=5000)
     check(page.locator("#start-review").get_attribute("href") == "#/review", "Start review opens the review session (0.8)")
@@ -53,10 +54,10 @@ with sync_playwright() as p:
     check(gs3 == "GS3: 100 percent on schedule", f"GS3 ring fills ({gs3})")
     page.screenshot(path=str(OUT / "today-day.png"))
 
-    # ---- ring opens Notes filtered to the subject ----
+    # ---- ring opens the main subject's folder (0.10) ----
     page.click(".ring:has-text('GS3')")
-    page.wait_for_selector(".note-card")
-    check(page.locator(".subject-chip[aria-pressed='true']").inner_text().strip() == "GS3", "ring tap filters Notes by subject")
+    page.wait_for_selector(".fcard[data-id='gen:GS3']")
+    check(page.locator("#crumbs .here").inner_text().strip() == "GS3" and "1 note" in page.locator(".fcard[data-id='gen:GS3']").inner_text(), "ring tap opens GS3 with its note")
 
     # ---- Ctrl+K search ----
     page.keyboard.press("Control+k")

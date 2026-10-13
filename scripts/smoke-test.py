@@ -35,7 +35,8 @@ with sync_playwright() as p:
     page.click("#new-note")
     page.click(".tpl-card[data-template='blank']")
     page.fill("#f-title", "Separation of powers")
-    page.select_option("#f-subject", "GS2")
+    page.click("#f-subject")  # 0.10: the subject chip opens Move to…
+    page.click("#move-sheet [data-folder='gen:GS2']")
     page.fill("#f-topic", "Judiciary")
     page.locator(".section-body .rich").first.click()
     page.keyboard.type("Montesquieu.")
