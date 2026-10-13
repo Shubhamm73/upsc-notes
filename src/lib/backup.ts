@@ -88,7 +88,7 @@ export class BackupError extends Error {}
 function validate(raw: unknown): BackupFile {
   const f = raw as Partial<BackupFile> | null;
   if (!f || typeof f !== 'object' || f.app !== APP) {
-    throw new BackupError("This file isn't a UPSC Study Notes backup. Pick a file named upsc-notes-backup-….json.");
+    throw new BackupError("This file isn't a UPSC Study Notes backup. Pick a file named upsc-notes-backup-….json (or ….json.txt).");
   }
   if (typeof f.format !== 'number' || f.format > FORMAT) {
     throw new BackupError('This backup was made by a newer version of the app. Update the app (reload it while online), then import again.');
@@ -135,7 +135,7 @@ export async function importBackup(file: File): Promise<ImportReport> {
   try {
     parsed = JSON.parse(await file.text());
   } catch {
-    throw new BackupError("This file couldn't be read as a backup. Pick the .json file the app saved.");
+    throw new BackupError("This file couldn't be read as a backup. Pick the .json or .json.txt file the app saved.");
   }
   const data = validate(parsed);
   for (const n of data.notes) if (RENAMED_SUBJECTS[n.subject]) n.subject = RENAMED_SUBJECTS[n.subject];
@@ -200,20 +200,27 @@ export function downloadFile(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
-/** Android share sheet with the file attached, e.g. straight to Google Drive. */
+/**
+ * Android share sheet with the file attached, e.g. straight to Google Drive.
+ * Chrome shares only some file types (pictures, PDF, audio, video, plain text): a .json file is refused,
+ * so the same backup goes out as plain text named ….json.txt. Import reads it like the .json file.
+ */
+function shareable(blob: Blob, filename: string): File {
+  return new File([blob], filename.endsWith('.json') ? `${filename}.txt` : filename, { type: 'text/plain' });
+}
+
 export function canShareFiles(): boolean {
   try {
-    const probe = new File(['{}'], 'probe.json', { type: 'application/json' });
-    return !!navigator.canShare?.({ files: [probe] });
+    return !!navigator.canShare?.({ files: [shareable(new Blob(['{}']), 'probe.json')] });
   } catch {
     return false;
   }
 }
 
 export async function shareFile(blob: Blob, filename: string): Promise<'shared' | 'cancelled'> {
-  const file = new File([blob], filename, { type: blob.type || 'application/json' });
+  const file = shareable(blob, filename);
   try {
-    await navigator.share({ files: [file], title: filename });
+    await navigator.share({ files: [file], title: file.name });
     return 'shared';
   } catch (e) {
     if ((e as DOMException)?.name === 'AbortError') return 'cancelled';

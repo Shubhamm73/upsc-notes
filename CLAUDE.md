@@ -2,10 +2,12 @@
 
 Offline-first study-notes PWA for one UPSC aspirant (owner's brother) on a **Samsung Galaxy Tab S8**.
 Owner: Shubham (GitHub `Shubhamm73`). Live: https://shubhamm73.github.io/upsc-notes/ (GitHub Pages via Actions on push to `main`).
-Current version: **0.9.0 (UI-4 step U4-1: Sketch block)**. Next: **UI-4 step U4-2 — Mark with the pen + optional haptics** (see "UI-4 session plan" in the roadmap).
+Current version: **0.9.1 (Share backup fix, R1 of the six-asks plan)**. Next: **R2 — 0.10 Folders for notes and words** (see "Six-asks plan" in the roadmap; it comes BEFORE the rest of UI-4).
+
+**Read this before doing anything: the work order is the "Six-asks plan" table below (R1–R6), then the rest of UI-4.** On 13 Oct 2026 the six-asks plan (UPSC Notes Redesign Plan artifact) recommended moving UI-4 after the six asks, but this file was written with the UI-4 plan instead, so 0.9.0 built Sketch and the next session started UI-4 step 2 again. The owner confirmed (13 Oct 2026, "go ahead with the recommended plan steps"): six asks first, every recommended decision, UI-4 U4-2…U4-4 after them. Sketch (0.9.0) stays.
 
 ## Non-negotiable rules
-- **Local-only data.** Notes, words, images live in IndexedDB (Dexie) on the device. No server storage, no accounts, no login. GitHub Pages serves code only.
+- **Local-only data.** Notes, words, images live in IndexedDB (Dexie) on the device. No server storage, no accounts, no login. GitHub Pages serves code only. **Approved exception from R3 (0.11)**: optional Google sign-in for backup only, files go from the tablet straight to his own Google Drive (`drive.file` scope); never any server of ours.
 - **Never lose data.** Autosave (~0.8 s debounce, flush on hide/pagehide), backup JSON (Downloads or share sheet → Google Drive), import merges by id keeping newer `updatedAt` and never deletes. Any schema change = new Dexie version with an `upgrade()` + map old data in `importBackup`.
 - **Touch-first**: targets ≥ 44 px (primary 56 px); works by touch alone; keyboard + S Pen optional extras.
 - **Motion ≤ 300 ms**, transform/opacity only, respect `prefers-reduced-motion`.
@@ -49,10 +51,11 @@ Routes: `#/` Today · `#/review` (`/insights`, `/words`, `/notes`) · `#/notes` 
 npm ci
 npm run build                       # tsc + vite build
 npx vite preview --port 4173 &      # then:
-for t in smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2 smoke-test-ui3 smoke-test-paste smoke-test-canvas2 smoke-test-sketch; do python3 scripts/$t.py; done
+for t in smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2 smoke-test-ui3 smoke-test-paste smoke-test-canvas2 smoke-test-sketch smoke-test-share; do python3 scripts/$t.py; done
 ```
 Python deps: playwright, pypdf, Pillow; `pdftotext` for the PDF test. In the cloud container pin `pip install playwright==1.56.0` (matches the pre-installed Chromium build 1194; newer pip versions look for a browser that isn't there).
-0.9.0 baseline: 11 suites, 489 checks, all passing (smoke-test-sketch adds 83); upgrade test from 0.8.3 (865b995): 34 checks (adds: the old build refuses a 0.9 backup and stores nothing).
+0.9.1 baseline: 12 suites, 507 checks, all passing (smoke-test-share adds 18); upgrade test from 0.9.0 (7d85b13): 31 checks, all passing (the 3 "an old build refuses a sketch backup" checks run only when the old build is below 0.9.0).
+0.9.0 baseline was: 11 suites, 489 checks, all passing (smoke-test-sketch adds 83); upgrade test from 0.8.3 (865b995): 34 checks (adds: the old build refuses a 0.9 backup and stores nothing).
 0.8.3 baseline was: 10 suites, 406 checks (smoke-test-canvas2 adds 79); upgrade test from 0.8.2 (3be8bd7): 31 checks.
 0.8.2 baseline was: 9 suites, 327 checks, all passing; upgrade test from 0.8.1 (4f17a05): 31 checks. 0.8.1 baseline was: 8 suites, 300 checks; upgrade test 31 checks from 0.7.1 (09379bc) and from 0.8.0 (144da24): v2 → v3 keeps every note, word, image, quick insight and setting byte-for-byte, and a 0.7.1 backup imports intact (fresh and upgraded tablet, no duplicate cards).
 
@@ -87,6 +90,8 @@ M1 offline foundation · M2 rich editor (sections, lists incl. dash, tables, res
 - No Dexie bump: everything new is an unindexed attr inside `section.doc`; old notes open unchanged (upgrade test). Older builds ignore the new attrs (they'd show a PYQ as an Article box and pictures uncropped).
 
 **0.9.0 — U4-1 Sketch block** (owner said "go" on 13 Oct 2026 to every proposal). Details in "U4-1 as built" below.
+
+**0.9.1 — R1 Share backup fix** (six-asks plan, ask 5 stopgap). Chrome on Android shares only some file types (pictures, PDF, audio, video, plain text; extension AND type are checked), so `canShareFiles()` probed a `.json` / `application/json` file, got false, and "Share backup (Drive, email…)" was **never shown on the tablet**. Now `lib/backup.ts shareable()` sends the same backup as `upsc-notes-backup-<date>.json.txt`, `text/plain`; Save to Downloads still writes `.json`. Import's picker accepts `.json,.txt,application/json,text/plain` (it always parsed the text, whatever the name); error texts name both. No data or format change. `smoke-test-share.py` stubs `navigator.canShare/share` with Chrome Android's rule (headless Linux Chromium has no share sheet), proves the stub refuses the old `.json` probe (the test fails on 0.9.0: button hidden), and checks cancel → not counted as a backup, the shared file's name/type/content, import of the `.json.txt` on a fresh profile (twice adds nothing), and the hidden button where sharing doesn't exist. **Confirm on the tablet**: Backup & storage shows Share, the sheet offers Drive, and the Drive copy imports.
 
 **UI-3 (0.8.0)**: review cards for quick insights (Dexie v3), one Today queue, full-screen review session (insight / word / whole-note cards, Again / Hard / Easy, swipes, keys, undo, summary with rings), streak moments at 7/30/100 with a Settings switch, backup format 2. Details below.
 
@@ -163,10 +168,25 @@ Today queue → full-screen **review session**: one card at a time; card types: 
 
 Decisions taken at build time (owner, 12 Oct 2026): whole-note card has Again/Hard/Easy (Easy = Mark reviewed); insight front blanks the line inside its paragraph; backup format 2; one-level undo; Settings switch for streak moments; session = 40 key lines/words + every due note; smoke-test-ui1's Start review checks now follow the session.
 
-### UI-4 — S Pen & finishing ← NEXT
+### Six-asks plan ← NEXT (owner's six asks after 0.8.3; plan artifact https://claude.ai/artifact/YA51kuXRmKJg1KN56w4HJR — read it with the Artifact tool for the mockups and full detail)
+**Decisions (owner, 13 Oct 2026: all recommended):** 1 order as drawn (renumbered below, 0.9.0 was taken by Sketch) · 2 deleting a folder sends its notes to Trash (30 days, restorable; dialog says how many; you can't delete the last subject under a main subject, there's always "General") · 3 words: "Add word to today" files it (makes month/date if missing), manual months and dates also allowed · 4 Google Drive backup: **yes**, Google sign-in for backup only, owner creates the Google Cloud OAuth client from our steps · 5 default schedule: every 2 days, keep the last 10 · 6 a note's own look = cover, headings, font, accent; background and text follow the app theme · 7 UI-4 (pen marking, haptics, speed, accessibility) **after** these six asks.
+
+Every release: same per-step routine as UI-4 below (baseline → state understanding as a table with proposals → wait for "go" → build → debug → upgrade test from the previous release → bump → update this file → commit, push, fast-forward main → confirm live → suites on the live site → end with the next step's prompt with real hashes). **Schema changes first** so later features build on the final data shape.
+
+| Step | Release | Scope (from the plan) | Data change | Status |
+|---|---|---|---|---|
+| R1 | 0.9.1 | **Share backup fix**: Share appears on the tablet and goes to Drive via the share sheet (stopgap until R3) | none | ☑ done |
+| R2 | 0.10 | **Folders**: Notes → main subject (GS1 … Current affairs, Others) → subject (History, Society …) → notes, with New note. Words → month → date → words. Each level: + add, Edit mode (rename by tapping the name, delete with red −, reorder by drag handle). Subjects inherit the main subject's colour. Breadcrumb (Notes › GS1 › History), Android back goes up one level. Note ⋯ → "Move to…". Recent row; Ctrl+K, Today's Continue writing still open a note in one tap. | **Dexie v4** `folders` (id, parent, name, colour, order, kind notes/words); upgrade rewrites no note: the 8 subjects become main subjects with one "General" each, a note with no folder shows under its old subject's General; words filed by the day added. **Backup format 4** carries folders; import maps formats 1–3 like the upgrade. Full upgrade test from 0.9.1 with real-size data. | ☐ |
+| R3 | 0.11 | **Google Drive backup and restore**: Backup & storage → Connect Google Drive (GIS sign-in, `drive.file`) → folder ("UPSC Notes backups" made for him, or Google Picker) → schedule (every 2 days default; also right after a big change: on) → keep last 10. Backs up when due the next time the app is open and online (a web app can't run closed). Token lasts 1 h; renew on next tap. Missed > 2× schedule → More's Backup row in warning colour (no home banner). "Restore from Google Drive" on an empty app: pick a backup → merge (nothing deleted). Settings (theme, font, width, streak moments …) go into the backup. Day 1: test the sign-in popup in the installed app on the tablet; fallback = full-page redirect sign-in. Needs the owner's Google Cloud client first (give him the ~15-minute steps). | backup format +1: settings (and later saved styles, templates) | ☐ |
+| R4 | 0.12 | **Tables, headings and containers**: raised table card, Insert → Table asks rows × columns (grid drag up to 10 × 8, steppers up to 50 × 12), header row + bold first column on; "4 × 3 ▾" size button in the table bar (warns before deleting cells with text; one undo step); 5 styles Clean (default), Banded, Lined, Boxed, Minimal; colour follows subject; optional caption; number columns right-aligned in a fixed-width font. Heading look (12 looks, 13 colours, fill soft/medium/solid, corners, 5 icons, fit/full width, left/centre), "Same as last", "Save as my style". Containers: select blocks → Put in container (soft panel, titled panel, sticky note, framed, quote, two-column; callouts become presets); Remove container keeps the text. PDF prints all of it (tilt/shadows flat). | none (unindexed attrs: table `style/color/caption`, heading `look`, new `panel` node; saved styles in `meta`, in the backup) | ☐ |
+| R5 | 0.13 | **Charts, diagrams and mind map**: Insert → Chart gallery, 12 data charts ("from numbers") + 8 diagrams ("from words": timeline, process/flowchart, cycle, Venn, comparison …) drawn by the app; mind map with unlimited nodes (+ Child / Tab, + Sibling / Enter, drag, Tidy up, label/colour/shape per node, long-press folds a branch, pinch zoom, two-finger pan, radial/tree layouts). New chart look: subject colour family or 6 palettes, rounded bars, light grid, values on tap, chip legend, title + source; draw-in 300 ms. Mind-map text searchable and markable. PDF: crisp 2× pictures, big mind maps on their own page. Ask the owner to resend his chart screenshot (it never came through). | none (`chartBlock` more kinds; new `diagram` and `mindMap` nodes, JSON in the section) | ☐ |
+| R6 | 0.14 | **Themes and templates**: 9 themes (Study desk, Night, Slate, True black, Sepia, Ocean, Forest night, Rose, High contrast) + Custom (accent, roundness, density); note ⋯ → "Note look" (cover, heading style set, font, accent) for this note / a whole subject / everywhere; 19 templates (15 new) + "Save as template" (My templates). PDFs keep a print-safe palette. | none (`note.look` unindexed; templates in `meta`; theme also in the backup) | ☐ |
+| then | 0.15+ | UI-4 remaining steps U4-2, U4-3, U4-4 (table below), renumbered at the time | | ☐ |
+
+### UI-4 — S Pen & finishing (U4-1 done in 0.9.0; the rest waits until after the six-asks plan)
 Sketch block (pressure, palm rejection, stored as image, in PDF), mark with the pen, optional haptics (setting), speed pass on a 5,000-word note, accessibility pass, PDF for new blocks.
 
-**UI-4 session plan** (owner, 13 Oct 2026: start UI-4 now, one step per fresh session, in this order).
+**UI-4 session plan** (written 13 Oct 2026; U4-1 shipped as 0.9.0. **U4-2…U4-4 are deferred until after R1–R6 above** (owner, 13 Oct 2026); their versions get renumbered then. A U4-2 proposal was drafted in a session on 13 Oct and nothing was built: pen drag over text = highlight with whole-word snapping and a line lock, second pass or side button un-marks, one undo step per stroke, tap = caret, long-press = select word; haptics off by default, 8–20 ms on pen mark, ratings, Mark reviewed, milestones; a Settings "Mark text with the S Pen" escape switch).
 Every step: baseline first (all suites + upgrade test from the previous release; stop if red) → state understanding as a table with a
 proposal for each open decision → wait for "go" → build → debug (stress any failing test to a root cause) → upgrade test from the
 previous release → bump version → update this file (tick the step, add "as built" notes and gotchas) → commit, push the branch,
@@ -175,14 +195,15 @@ fast-forward main → confirm the live version → run all suites against the li
 | Step | Scope | Model · effort | Version | Status |
 |---|---|---|---|---|
 | U4-1 | **Sketch block**: replaces "Sketch · coming soon"; S Pen pressure, palm rejection (only pen draws, a finger scrolls), eraser/undo/clear, stored (image, and strokes if decided), backup, PDF | Opus · high | 0.9.0 | ☑ done (see "U4-1 as built") |
-| U4-2 | **Mark with the pen** (highlight text with the S Pen) + **optional haptics** (Settings switch, off by default) | Opus · medium | 0.9.1 | ☐ |
-| U4-3 | **Speed pass** on a 5,000-word note (open, typing, scroll, autosave, live counts, PDF, review), measured before/after at 4× CPU throttle | Opus · high | 0.9.2 | ☐ |
-| U4-4 | **Accessibility pass** (axe, keyboard-only, contrast day/night, names, targets) + **PDF audit of every block** + close UI-4 | Sonnet · medium | 0.9.3 | ☐ |
+| U4-2 | **Mark with the pen** (highlight text with the S Pen) + **optional haptics** (Settings switch, off by default) | Opus · medium | after R6 | ☐ deferred |
+| U4-3 | **Speed pass** on a 5,000-word note (open, typing, scroll, autosave, live counts, PDF, review), measured before/after at 4× CPU throttle | Opus · high | after R6 | ☐ deferred |
+| U4-4 | **Accessibility pass** (axe, keyboard-only, contrast day/night, names, targets) + **PDF audit of every block** + close UI-4 | Sonnet · medium | after R6 | ☐ deferred |
 
 ### Motion spec (UI-2/UI-3)
 Open note: card expands to page 240 ms · Save: dot pulse then ✓ 160 ms · Highlight: marker sweep 200 ms · Mark reviewed: highlighted lines fly up into Quick insights 300 ms · Slash menu: fade + rise 4 px 120 ms · Flashcard flip 240 ms · Rating: slide out 200 ms · Summary rings fill 300 ms · Delete forever: row collapse 160 ms, no celebration.
 
 ## Reference documents (claude.ai artifacts, owner's account)
+- **UPSC Notes Redesign Plan (the six asks, 13 Oct 2026; current work order)**: https://claude.ai/artifact/YA51kuXRmKJg1KN56w4HJR
 - Design & deployment plan: https://claude.ai/code/artifact/18300a71-5a98-4c0d-9726-ed89b2ac3732
 - UI redesign plan (sections 1–9, approved): https://claude.ai/code/artifact/6f3dba36-5e4c-41b2-ad68-726fbe4691ef
 - UI-0 mockups (Today, writing canvas, review card, note list; day/night): https://claude.ai/artifact/4k13PnRV9qeBR1MD72uLnt
@@ -196,5 +217,5 @@ Open note: card expands to page 240 ms · Save: dot pulse then ✓ 160 ms · Hig
 - Subject rings count notes only (reviewed and not overdue), so insight and word cards don't move them; the summary rings only change when a note card is rated.
 - Rating a note (or Mark reviewed) changes its `updatedAt`, so Today's "Continue writing" may show it as "Edited just now" when no note was opened since.
 - Highlight is an inclusive mark: typing right after a highlighted run continues the highlight (unmark with the toolbar or Ctrl+Shift+H).
-- Backup is a file, not an account link: Save to Downloads, or Share → the Android share sheet → Google Drive (the Drive app uses whatever Google account is signed in on the tablet). There is no automatic sync and no Google sign-in in the app (local-only rule). A direct "Back up to my Drive" button would need Google sign-in (Google Identity Services + Drive API `drive.file` scope, a Google Cloud OAuth client owned by the owner); not built, owner to decide.
+- Backup is a file, not an account link: Save to Downloads, or Share → the Android share sheet → Google Drive (the Drive app uses whatever Google account is signed in on the tablet). There is no automatic sync and no Google sign-in in the app (local-only rule). A direct "Back up to my Drive" button would need Google sign-in (Google Identity Services + Drive API `drive.file` scope, a Google Cloud OAuth client owned by the owner); **owner decided yes (13 Oct 2026): it is R3 (0.11)**. Since 0.9.1 the Share button works on the tablet.
 - `git remote` may print "repository moved" — canonical URL is https://github.com/Shubhamm73/upsc-notes.git.

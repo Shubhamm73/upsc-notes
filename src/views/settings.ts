@@ -22,7 +22,7 @@ export function mountSettings(root: HTMLElement, ctx: AppContext): View {
   const saveBtn = h('button', { type: 'button', class: 'primary', id: 'backup-download' }, 'Save backup to Downloads');
   const shareBtn = h('button', { type: 'button', id: 'backup-share' }, 'Share backup (Drive, email…)');
   shareBtn.hidden = !canShareFiles();
-  const fileInput = h('input', { type: 'file', id: 'import-file', accept: '.json,application/json' });
+  const fileInput = h('input', { type: 'file', id: 'import-file', accept: '.json,.txt,application/json,text/plain' });
   const importBtn = h('button', { type: 'button', id: 'backup-import' }, 'Import a backup file');
   const protectBtn = h('button', { type: 'button', id: 'protect' }, 'Ask the browser to protect my data');
   const pdfSubject = h('select', { id: 'pdf-subject', 'aria-label': 'Subject to export' }, h('option', { value: 'All' }, 'All subjects'), ...SUBJECTS.map((s) => h('option', { value: s }, s)));
