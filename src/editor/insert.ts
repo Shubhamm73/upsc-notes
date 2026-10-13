@@ -3,6 +3,8 @@ import { NodeSelection } from '@tiptap/pm/state';
 import { CALLOUT_KINDS } from '../lib/callouts';
 import { DEFAULT_CHART } from './chart-block';
 import { setCallout } from './callout';
+import { selectSketchBefore } from './sketch-block';
+import { SKETCH_H } from '../lib/sketch';
 
 export interface InsertEnv {
   pickImage(editor: Editor): void;
@@ -84,7 +86,17 @@ export const INSERT_ITEMS: InsertItem[] = [
   },
   { id: 'chart', name: 'Chart', hint: 'Bar, line or pie from a small grid', glyph: 'i:data', keywords: 'chart graph bar line pie', run: (e) => insertBlocks(e, { type: 'chartBlock', attrs: structuredClone(DEFAULT_CHART) }) },
   { id: 'image', name: 'Image', hint: 'From the tablet, resizable', glyph: 'i:image', keywords: 'image photo picture diagram map', run: (e, env) => env.pickImage(e) },
-  { id: 'sketch', name: 'Sketch', hint: 'Draw with the S Pen · coming soon', glyph: 'i:marker', keywords: 'sketch draw pen drawing', soon: true, run: (_e, env) => env.toast('Sketching with the S Pen arrives in a later update.') },
+  {
+    id: 'sketch',
+    name: 'Sketch',
+    hint: 'Draw with the S Pen: maps, diagrams, flowcharts',
+    glyph: 'i:pen',
+    keywords: 'sketch draw pen drawing diagram map flowchart s pen',
+    run: (e) => {
+      insertBlocks(e, { type: 'sketchBlock', attrs: { strokes: [], height: SKETCH_H, width: 100, align: 'center', caption: '' } });
+      selectSketchBefore(e);
+    }
+  },
   { id: 'callout', name: 'Callout', hint: 'Article, Case, Data, Example, Way forward, PYQ', glyph: 'i:article', keywords: 'callout box pyq', submenu: true, run: () => undefined },
   {
     id: 'divider',

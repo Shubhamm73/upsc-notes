@@ -10,6 +10,7 @@ import { addLineBy, besidePicture, isBelowPicture, setBelowPicture } from './flo
 import { CALLOUT_ITEMS, INSERT_ITEMS, cycleList, filterItems, insertBlocks, type InsertEnv, type InsertItem } from './insert';
 import { sweepKey, type SlashHook } from './editor';
 import type { PasteHooks } from './paste';
+import { setSketchHooks } from './sketch-block';
 
 export const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -420,7 +421,18 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
   const inTable = (e: Editor) => e.isActive('table');
   const selectedBlock = (e: Editor, name?: string) => {
     const s = e.state.selection;
-    return s instanceof NodeSelection && (name ? s.node.type.name === name : ['imageBlock', 'chartBlock'].includes(s.node.type.name));
+    return s instanceof NodeSelection && (name ? s.node.type.name === name : ['imageBlock', 'chartBlock', 'sketchBlock'].includes(s.node.type.name));
+  };
+  /** A selected picture or sketch: both float with text beside them and take a caption. */
+  const FLOATS = ['imageBlock', 'sketchBlock'];
+  const selectedFloat = (e: Editor) => {
+    const s = e.state.selection;
+    return s instanceof NodeSelection && FLOATS.includes(s.node.type.name) ? s : null;
+  };
+  const floatAlign = (e: Editor) => selectedFloat(e)?.node.attrs.align;
+  const centerFloat = (e: Editor) => {
+    const s = selectedFloat(e);
+    if (s) e.view.dispatch(e.state.tr.setNodeMarkup(s.from, undefined, { ...s.node.attrs, align: 'center' }));
   };
   const tableOps = h(
     'div',
@@ -466,7 +478,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
    */
   const wrapImage = (e: Editor, align: 'left' | 'right') => {
     const sel = e.state.selection;
-    if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'imageBlock') return;
+    if (!(sel instanceof NodeSelection) || !FLOATS.includes(sel.node.type.name)) return;
     const node = sel.node;
     const width = Number(node.attrs.width) || 100;
     const tr = e.state.tr.setNodeMarkup(sel.from, undefined, { ...node.attrs, align, width: width > 60 ? 50 : width });
@@ -491,17 +503,17 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
   };
   // Caption: written when the box is left (or Enter), so one caption is one Undo step.
   const captionInput = h('input', { type: 'text', class: 'ctx-input caption-input', id: 'image-caption', placeholder: 'Caption', 'aria-label': 'Picture caption', maxlength: 200 });
-  let captionFor: { e: Editor; pos: number; imageId: unknown } | null = null;
+  let captionFor: { e: Editor; pos: number; type: string; imageId: unknown } | null = null;
   captionInput.addEventListener('focus', () => {
     const e = editor;
     const sel = e?.state.selection;
-    captionFor = e && sel instanceof NodeSelection && sel.node.type.name === 'imageBlock' ? { e, pos: sel.from, imageId: sel.node.attrs.imageId } : null;
+    captionFor = e && sel instanceof NodeSelection && FLOATS.includes(sel.node.type.name) ? { e, pos: sel.from, type: sel.node.type.name, imageId: sel.node.attrs.imageId } : null;
   });
   const commitCaption = () => {
     const t = captionFor;
     if (!t || t.e.isDestroyed) return;
     const node = t.e.state.doc.nodeAt(t.pos);
-    if (!node || node.type.name !== 'imageBlock' || node.attrs.imageId !== t.imageId) return;
+    if (!node || node.type.name !== t.type || node.attrs.imageId !== t.imageId) return;
     const caption = captionInput.value.trim();
     if (caption === (node.attrs.caption ?? '')) return;
     t.e.view.dispatch(t.e.state.tr.setNodeMarkup(t.pos, undefined, { ...node.attrs, caption }));
@@ -512,20 +524,22 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     ev.preventDefault();
     commitCaption();
     const t = captionFor;
-    if (t && !t.e.isDestroyed && t.e.state.doc.nodeAt(t.pos)?.type.name === 'imageBlock') {
+    if (t && !t.e.isDestroyed && t.e.state.doc.nodeAt(t.pos)?.type.name === t.type) {
       t.e.view.dispatch(t.e.state.tr.setSelection(NodeSelection.create(t.e.state.doc, t.pos)));
       t.e.commands.focus();
     }
   });
 
+  const imageLabel = h('span', { class: 'ctx-label' }, 'Image');
+  const cropBtn = btn(h('span', { class: 'tb-ic' }, icon('crop', 18), 'Crop & shape'), 'Crop and shape', (e) => openCrop(e), 'tb');
   const imageOps = h(
     'div',
     { class: 'ctx-group tb-align', role: 'group', 'aria-label': 'Image' },
-    h('span', { class: 'ctx-label' }, 'Image'),
-    btn('Left · text beside', 'Align image left', (e) => wrapImage(e, 'left'), 'tb', (e) => e.getAttributes('imageBlock').align === 'left'),
-    btn('Center', 'Center image', (e) => e.chain().updateAttributes('imageBlock', { align: 'center' }).run(), 'tb', (e) => e.getAttributes('imageBlock').align === 'center'),
-    btn('Right · text beside', 'Align image right', (e) => wrapImage(e, 'right'), 'tb', (e) => e.getAttributes('imageBlock').align === 'right'),
-    btn(h('span', { class: 'tb-ic' }, icon('crop', 18), 'Crop & shape'), 'Crop and shape', (e) => openCrop(e), 'tb'),
+    imageLabel,
+    btn('Left · text beside', 'Align image left', (e) => wrapImage(e, 'left'), 'tb', (e) => floatAlign(e) === 'left'),
+    btn('Center', 'Center image', (e) => centerFloat(e), 'tb', (e) => floatAlign(e) === 'center'),
+    btn('Right · text beside', 'Align image right', (e) => wrapImage(e, 'right'), 'tb', (e) => floatAlign(e) === 'right'),
+    cropBtn,
     btn('+ Line above', 'Add a line above the picture', (e) => addLineBy(e, 'above'), 'tb'),
     btn('+ Line below', 'Add a line below the picture', (e) => addLineBy(e, 'below'), 'tb'),
     captionInput
@@ -621,7 +635,12 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     }
     if (e) {
       tableOps.hidden = !inTable(e);
-      imageOps.hidden = !selectedBlock(e, 'imageBlock');
+      const float = selectedFloat(e);
+      imageOps.hidden = !float;
+      const sketch = float?.node.type.name === 'sketchBlock';
+      imageLabel.textContent = sketch ? 'Sketch' : 'Image';
+      imageOps.setAttribute('aria-label', sketch ? 'Sketch' : 'Image');
+      cropBtn.hidden = sketch;
       blockOps.hidden = !selectedBlock(e);
       const kind = calloutKindAt(e);
       calloutOps.hidden = !kind;
@@ -632,7 +651,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
         pyqPaper.value = String(a.paper ?? '');
         pyqMarks.value = String(a.marks ?? '');
       }
-      if (!imageOps.hidden && document.activeElement !== captionInput) captionInput.value = String(e.getAttributes('imageBlock').caption ?? '');
+      if (float && document.activeElement !== captionInput) captionInput.value = String(float.node.attrs.caption ?? '');
       const below = isBelowPicture(e);
       const beside = !below && e.state.selection.empty && besidePicture(e);
       belowBtn.hidden = !beside;
@@ -663,6 +682,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
   window.visualViewport?.addEventListener('scroll', onViewport);
   document.addEventListener('pointerdown', onDocPointer);
   document.body.append(menu, bubble, touchbar, fileInput);
+  setSketchHooks(opts.history);
 
   return {
     slash,
@@ -719,6 +739,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
       window.visualViewport?.removeEventListener('resize', onViewport);
       window.visualViewport?.removeEventListener('scroll', onViewport);
       document.removeEventListener('pointerdown', onDocPointer);
+      setSketchHooks(null);
       menu.remove();
       bubble.remove();
       touchbar.remove();

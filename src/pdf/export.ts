@@ -7,6 +7,7 @@ import { groupInsights } from '../lib/insights';
 import { calloutKind, calloutLabel } from '../lib/callouts';
 import { docToText } from '../lib/doc';
 import { isPlain, normRotate, readCrop, shapeOf, tracePath } from '../lib/shapes';
+import { readHeight, readStrokes, sketchToPng } from '../lib/sketch';
 
 /** A4 in points, with 48 pt margins. */
 const PAGE_W = 595.28;
@@ -164,7 +165,21 @@ function inlines(nodes: DocNode[] | undefined): Content[] {
 
 interface Ctx {
   images: Map<string, Pic>;
+  /** Sketches drawn so far (each once, from its strokes, in print colours). */
+  sketches: Map<DocNode, Pic>;
   width: number; // available width at this nesting level
+}
+
+/** What a picture block prints: a stored picture (cropped / shaped), or a sketch drawn from its strokes. */
+function pictureOf(n: DocNode, ctx: Ctx): Pic | undefined {
+  if (n.type === 'imageBlock') return ctx.images.get(picKey(n.attrs));
+  if (n.type !== 'sketchBlock') return undefined;
+  let pic = ctx.sketches.get(n);
+  if (!pic) {
+    pic = sketchToPng(readStrokes(n.attrs?.strokes), readHeight(n.attrs?.height));
+    ctx.sketches.set(n, pic);
+  }
+  return pic;
 }
 
 /** Rough printed height of a text block at a given width (10.5 pt Roboto, ~5.3 pt a character). */
@@ -192,7 +207,7 @@ function blocks(nodes: DocNode[] | undefined, ctx: Ctx): Content[] {
   for (let i = 0; i < list.length; i++) {
     const n = list[i];
     const align = n.attrs?.align;
-    const img = n.type === 'imageBlock' ? ctx.images.get(picKey(n.attrs)) : undefined;
+    const img = pictureOf(n, ctx);
     // A left/right image with text after it prints side by side with that text, as on screen:
     // the text blocks that fit next to the picture's height go in the column beside it.
     if (img && (align === 'left' || align === 'right') && wraps(list[i + 1])) {
@@ -246,8 +261,9 @@ function block(n: DocNode, ctx: Ctx): Content | null {
       };
     case 'table':
       return table(n, ctx);
-    case 'imageBlock': {
-      const img = ctx.images.get(picKey(n.attrs));
+    case 'imageBlock':
+    case 'sketchBlock': {
+      const img = pictureOf(n, ctx);
       if (!img) return { text: '[image missing]', color: MUTED, italics: true, margin: [0, 4, 0, 8] };
       const pct = Math.min(100, Math.max(10, Number(n.attrs?.width ?? 100)));
       let w = (ctx.width * pct) / 100;
@@ -444,7 +460,7 @@ export async function buildPdf(scope: PdfScope): Promise<{ blob: Blob; filename:
     const n = scope.note;
     const ids = scope.kind === 'section' ? [scope.sectionId] : null;
     const docs = n.sections.filter((s) => !ids || ids.includes(s.id)).map((s) => s.doc);
-    const ctx: Ctx = { images: await loadImages(docs), width: CONTENT_W };
+    const ctx: Ctx = { images: await loadImages(docs), sketches: new Map(), width: CONTENT_W };
     header = n.title || 'Untitled note';
     content = [
       { text: n.title || 'Untitled note', style: 'title' },
@@ -458,7 +474,7 @@ export async function buildPdf(scope: PdfScope): Promise<{ blob: Blob; filename:
   } else {
     const all = (await db.notes.toArray()).filter((n) => !n.deletedAt && (scope.subject === 'All' || n.subject === scope.subject));
     const words = scope.includeVocab ? (await db.vocab.toArray()).filter((w) => !w.deletedAt).sort((a, b) => a.word.localeCompare(b.word)) : [];
-    const ctx: Ctx = { images: await loadImages(all.flatMap((n) => n.sections.map((s) => s.doc))), width: CONTENT_W };
+    const ctx: Ctx = { images: await loadImages(all.flatMap((n) => n.sections.map((s) => s.doc))), sketches: new Map(), width: CONTENT_W };
     content = [
       { text: 'UPSC Study Notes', style: 'title', margin: [0, 160, 0, 6] },
       { text: scope.subject === 'All' ? 'All subjects' : scope.subject, fontSize: 14, color: ACCENT },

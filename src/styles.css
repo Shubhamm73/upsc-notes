@@ -1021,3 +1021,69 @@ body.cropping { overflow: hidden; }
 .crop-zoom { display: inline-flex; align-items: center; gap: 10px; flex: 1 1 220px; min-width: 0; }
 .crop-zoom input { flex: 1; min-height: 44px; padding: 0; border: 0; background: transparent; accent-color: var(--accent); }
 @media (max-width: 599px) { .crop-chip span { display: none; } .crop-chip { padding: 0 10px; } }
+
+/* ======================= U4-1: sketch block ======================= */
+/* Ink colours: the note keeps colour names, so night mode can show its own (the PDF prints day colours). */
+:root {
+  --sk-ink: #1c1f24; --sk-blue: #2f5fb3; --sk-red: #c0392b; --sk-green: #2e7d4f; --sk-orange: #cf7420;
+  --sk-hl-yellow: #ffd400; --sk-hl-green: #5ad17a; --sk-hl-pink: #ff6fae; --sk-hl-blue: #5aa9ff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='day']) {
+    --sk-ink: #ece8de; --sk-blue: #8fb3f0; --sk-red: #f08a7e; --sk-green: #7fcf9d; --sk-orange: #f4b26b;
+    --sk-hl-yellow: #ffe14d; --sk-hl-green: #6fdc8c; --sk-hl-pink: #ff8cc4; --sk-hl-blue: #7cc0ff;
+  }
+}
+:root[data-theme='night'] {
+  --sk-ink: #ece8de; --sk-blue: #8fb3f0; --sk-red: #f08a7e; --sk-green: #7fcf9d; --sk-orange: #f4b26b;
+  --sk-hl-yellow: #ffe14d; --sk-hl-green: #6fdc8c; --sk-hl-pink: #ff8cc4; --sk-hl-blue: #7cc0ff;
+}
+.sketch-frame { width: 100%; }
+.sketch-paper {
+  position: relative; width: 100%; aspect-ratio: 1000 / 600; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  /* a finger scrolls the note; the pen's own scrolling is switched off while it's near (pen-near) */
+  touch-action: pan-x pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: crosshair;
+}
+.sketch-block.is-sketching .sketch-paper { background-image: radial-gradient(circle, color-mix(in srgb, var(--muted) 35%, transparent) 1px, transparent 1.5px); background-size: 24px 24px; border-color: var(--accent); }
+.sketch-paper canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.sketch-live { pointer-events: none; }
+.ProseMirror[contenteditable='true'] .sketch-paper.pen-near,
+:root[data-sketch-finger] .ProseMirror[contenteditable='true'] .sketch-paper { touch-action: none; }
+.ProseMirror[contenteditable='false'] .sketch-paper { cursor: default; }
+/* handles only take touches when they show: a stroke in the corner must draw, not resize */
+.sketch-block .resize-handle, .sketch-grow { pointer-events: none; }
+.sketch-block.is-selected .resize-handle, .sketch-block.is-sketching .resize-handle, .sketch-block.resizing .resize-handle,
+.sketch-block.is-sketching .sketch-grow, .sketch-block.is-selected .sketch-grow, .sketch-block.growing .sketch-grow { pointer-events: auto; opacity: 1; }
+.sketch-grow {
+  position: absolute; left: 50%; bottom: -14px; width: 72px; height: 28px; min-height: 0; margin-left: -36px; padding: 0;
+  border-radius: 14px; border: 1px solid var(--line); background: var(--surface); cursor: ns-resize; opacity: 0; touch-action: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.sketch-grow::before { content: ''; width: 30px; height: 3px; border-radius: 2px; background: var(--muted); }
+@media (hover: none) { .sketch-block.is-sketching .sketch-grow { height: 44px; bottom: -22px; } }
+.ProseMirror[contenteditable='false'] .sketch-block .resize-handle, .ProseMirror[contenteditable='false'] .sketch-grow { display: none; }
+.sketch-strip {
+  position: sticky; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); z-index: 3; align-self: stretch;
+  display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-top: 22px; padding: 6px 8px;
+  background: var(--rail); border: 1px solid var(--line); border-radius: 14px; line-height: normal;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.12);
+}
+.sketch-strip[hidden] { display: none; }
+@media (max-width: 899px) { .sketch-strip { bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); } }
+.sk-group { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.sk-group[hidden] { display: none; }
+.sk-btn { min-height: 44px; min-width: 44px; padding: 0 10px; font-size: 0.9rem; white-space: nowrap; }
+.sk-ic { display: inline-flex; align-items: center; gap: 6px; }
+.sk-swatch, .sk-size { width: 44px; height: 44px; min-height: 44px; min-width: 44px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.sk-dot { width: 22px; height: 22px; border-radius: 50%; box-shadow: 0 0 0 1px var(--line); }
+.sk-bar { width: 22px; border-radius: 4px; background: var(--fg); }
+.sk-size[aria-pressed='true'] .sk-bar { background: var(--accent-fg); }
+.sk-swatch[aria-pressed='true'] .sk-dot { box-shadow: 0 0 0 2px var(--accent-fg); }
+.sk-btn.danger { color: var(--error); }
+.sk-btn.sk-done { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 700; }
+/* names only on a wide screen; the tablet gets one row of icons (each keeps its name as label and tooltip) */
+@media (max-width: 1399px) { .sk-text { display: none; } }
+
+/* a section written by a newer version: shown read-only, never saved over */
+.unreadable-note { margin: 0 0 8px; padding: 10px 14px; border-radius: 10px; background: var(--warn-bg); color: var(--warn-fg); font-weight: 600; }

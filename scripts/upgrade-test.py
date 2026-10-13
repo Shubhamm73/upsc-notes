@@ -246,7 +246,41 @@ try:
             fresh.set_input_files("#import-file", backup)
             expect(fresh.locator(".import-result")).to_contain_text("0 added", timeout=10000)
             check(len(fresh.evaluate(ALL, "cards") or []) == len(fc), "fresh tablet: importing twice makes no duplicate cards")
-        fresh_browser.close()
+        # ---- 0.9+: a backup with a sketch is refused by the old build (it would open that section blank) ----
+        if ver(new_v) >= (0, 9, 0) and ver(old_v) < (0, 9, 0):
+            fresh.goto(URL + "#/n/new/blank")
+            fresh.wait_for_selector("#f-title")
+            fresh.fill("#f-title", "Sketched in the new build")
+            fresh.locator(".section-body .rich").first.click()
+            fresh.keyboard.type("/sketch")
+            fresh.wait_for_selector(".insert-opt[data-item='sketch'][aria-selected='true']")
+            fresh.keyboard.press("Enter")
+            fresh.wait_for_selector(".sketch-paper")
+            fresh.evaluate("""async () => { const paper = document.querySelector('.sketch-paper'); const r = paper.getBoundingClientRect();
+                for (const [t, f] of [['pointerdown', 0.1], ['pointermove', 0.3], ['pointermove', 0.5], ['pointerup', 0.5]]) {
+                  paper.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'pen', clientX: r.left + f * r.width, clientY: r.top + f * r.height, pressure: 0.6, buttons: t === 'pointerup' ? 0 : 1 }));
+                  await new Promise(res => requestAnimationFrame(res)); } }""")
+            expect(fresh.locator("#save-state")).to_have_attribute("data-state", "saved", timeout=5000)
+            fresh.goto(URL + "#/settings")
+            with fresh.expect_download() as dl:
+                fresh.click("#backup-download")
+            newer = os.path.join(profile + "-files", "new-backup.json")
+            dl.value.save_as(newer)
+            check(json.loads(open(newer).read())["format"] == 3, "the new build's backup is format 3")
+            fresh_browser.close()
+            serve(OLD)
+            back = p.chromium.launch()
+            oldpage = back.new_page()
+            oldpage.on("pageerror", lambda e: errors.append(str(e)))
+            oldpage.goto(URL + "#/settings")
+            oldpage.wait_for_selector("#import-file", state="attached")
+            oldpage.set_input_files("#import-file", newer)
+            oldpage.wait_for_timeout(1500)
+            check("newer version" in oldpage.inner_text("body"), f"{old_v} refuses a {new_v} backup (\"made by a newer version\") instead of opening sketches as blank sections")
+            check(oldpage.evaluate(ALL_NOTES) == [], f"{old_v} stored nothing from it")
+            back.close()
+        else:
+            fresh_browser.close()
         check(not errors, f"no page errors after import {errors}")
 finally:
     subprocess.run(["fuser", "-k", "4173/tcp"], capture_output=True)

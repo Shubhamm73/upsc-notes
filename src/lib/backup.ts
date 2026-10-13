@@ -3,8 +3,12 @@ import { ymd } from './dates';
 import { syncNoteCards } from './review';
 
 const APP = 'upsc-notes';
-/** 1 = 0.1–0.7 (notes, words, images); 2 = 0.8+ (adds review cards and the streak's review days). */
-const FORMAT = 2;
+/**
+ * 1 = 0.1–0.7 (notes, words, images); 2 = 0.8 (adds review cards and the streak's review days);
+ * 3 = 0.9+ (notes may hold sketch blocks). An older app refuses a newer format instead of opening
+ * sections it can't show as blank pages.
+ */
+const FORMAT = 3;
 
 interface ImageOut extends Omit<ImageRec, 'blob'> {
   type: string;

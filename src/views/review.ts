@@ -529,9 +529,9 @@ export function mountReview(root: HTMLElement, ctx: AppContext): View {
     if (e.clientX < EDGE || e.clientX > window.innerWidth - EDGE) return;
     const t = e.target as HTMLElement;
     if (t.closest('a, button')) return;
-    // Sideways drags that scroll something (a wide table) are not swipes; with a mouse, a drag
-    // over the note's text selects it.
-    if (t.closest('.tableWrapper, .chart-block') || (e.pointerType === 'mouse' && t.closest('.rv-note'))) return;
+    // Sideways drags that scroll something (a wide table) are not swipes, nor a pen stroke on a sketch
+    // (it would rate the note by accident); with a mouse, a drag over the note's text selects it.
+    if (t.closest('.tableWrapper, .chart-block, .sketch-block') || (e.pointerType === 'mouse' && t.closest('.rv-note'))) return;
     drag = { x: e.clientX, y: e.clientY, t: e.timeStamp, id: e.pointerId, axis: '', dx: 0, dy: 0 };
   });
   card.addEventListener('pointermove', (e) => {

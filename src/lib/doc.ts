@@ -56,17 +56,28 @@ export function noteSearchText(n: Note): string {
     n.subject,
     n.explain,
     n.connect,
-    ...n.sections.map((s) => [s.heading, docToText(s.doc), ...calloutsIn(s.doc).map((c) => `${c.label} callout`), ...imageCaptions(s.doc)].join(' '))
+    ...n.sections.map((s) => [s.heading, docToText(s.doc), ...calloutsIn(s.doc).map((c) => `${c.label} callout`), ...imageCaptions(s.doc), ...sketchesIn(s.doc).map(() => 'sketch')].join(' '))
   ]
     .join(' ')
     .toLowerCase();
 }
 
-/** Captions under pictures (searchable like text). */
+/** Every sketch block in a doc (search finds "sketch"). */
+export function sketchesIn(doc: DocNode | undefined): DocNode[] {
+  const out: DocNode[] = [];
+  const walk = (n: DocNode) => {
+    if (n.type === 'sketchBlock') out.push(n);
+    (n.content ?? []).forEach(walk);
+  };
+  if (doc) walk(doc);
+  return out;
+}
+
+/** Captions under pictures and sketches (searchable like text). */
 export function imageCaptions(doc: DocNode | undefined): string[] {
   const out: string[] = [];
   const walk = (n: DocNode) => {
-    if (n.type === 'imageBlock' && typeof n.attrs?.caption === 'string' && n.attrs.caption.trim()) out.push(n.attrs.caption.trim());
+    if ((n.type === 'imageBlock' || n.type === 'sketchBlock') && typeof n.attrs?.caption === 'string' && n.attrs.caption.trim()) out.push(n.attrs.caption.trim());
     (n.content ?? []).forEach(walk);
   };
   walk(doc ?? { type: 'doc' });

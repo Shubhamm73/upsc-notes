@@ -393,14 +393,14 @@ with sync_playwright() as p:
     expect(page.locator(".streak")).to_contain_text("2-day streak")
     check(page.locator(".rail").is_visible(), "leaving the session brings the rail back")
 
-    # ---- backup: format 2 with cards and review days ----
+    # ---- backup: format 2+ (3 since 0.9) with cards and review days ----
     page.goto(URL + "#/settings")
     with page.expect_download() as dl:
         page.click("#backup-download")
     bpath = OUT / "ui3-backup.json"
     dl.value.save_as(bpath)
     bk = json.loads(bpath.read_text())
-    check(bk["format"] == 2 and bk["schemaVersion"] == 3, "backup: format 2, schema 3")
+    check(bk["format"] == 3 and bk["schemaVersion"] == 3, "backup: format 3 (0.9: may hold sketches), schema 3")
     check(len(bk["cards"]) == 4 and bk["counts"]["cards"] == 4 and bk["meta"]["reviewDays"] == [D0, D1], "backup carries all cards (retired too) and the review days")
 
     # ---- D4: re-highlighting a removed line brings its card back ----

@@ -9,6 +9,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { DocNode } from '../db';
 import { ImageBlock } from './image-block';
 import { ChartBlock } from './chart-block';
+import { SketchBlock } from './sketch-block';
 import { Callout } from './callout';
 import { pasteExtension, type PasteHooks } from './paste';
 import { PictureFlow } from './flow';
@@ -108,6 +109,14 @@ function tidy(n: DocNode): DocNode {
   return n;
 }
 
+/** Block and mark types in saved content that this version doesn't know (written by a newer version). */
+function unknownTypes(n: DocNode, nodes: Record<string, unknown>, marks: Record<string, unknown>, out = new Set<string>()): Set<string> {
+  if (n.type && !nodes[n.type]) out.add(n.type);
+  for (const m of n.marks ?? []) if (!marks[m.type]) out.add(m.type);
+  n.content?.forEach((c) => unknownTypes(c, nodes, marks, out));
+  return out;
+}
+
 export function createEditor(opts: {
   element: HTMLElement;
   content: DocNode;
@@ -120,7 +129,7 @@ export function createEditor(opts: {
   /** false = read-only (the review session's whole-note card). */
   editable?: boolean;
 }): Editor {
-  return new Editor({
+  const editor = new Editor({
     element: opts.element,
     editable: opts.editable ?? true,
     content: opts.content as object,
@@ -137,6 +146,7 @@ export function createEditor(opts: {
       TableKit.configure({ table: { resizable: true, cellMinWidth: 80 } }),
       ImageBlock,
       ChartBlock,
+      SketchBlock,
       Callout,
       PictureFlow,
       ActiveBlock,
@@ -150,4 +160,17 @@ export function createEditor(opts: {
     onFocus: ({ editor }) => opts.onFocus(editor),
     onBlur: ({ editor }) => opts.onBlur?.(editor)
   });
+  // Never lose data: a section holding something this version can't show would open blank (the editor drops
+  // what it doesn't know), and typing would save the blank over it. It opens read-only instead, untouched.
+  if (unknownTypes(opts.content, editor.schema.nodes, editor.schema.marks).size) {
+    editor.setEditable(false, false);
+    opts.element.classList.add('is-unreadable');
+    opts.element.prepend(
+      Object.assign(document.createElement('p'), {
+        className: 'unreadable-note',
+        textContent: 'This section was written by a newer version of the app. Update the app (reload it while online) to see and edit it. Nothing in it has been changed.'
+      })
+    );
+  }
+  return editor;
 }

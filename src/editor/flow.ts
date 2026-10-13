@@ -11,14 +11,16 @@ import type { Node as PMNode } from '@tiptap/pm/model';
  * - Typing while a picture is selected starts a new line after it instead of replacing it.
  */
 const CLEARABLE = ['paragraph', 'heading', 'bulletList', 'orderedList', 'blockquote', 'callout', 'horizontalRule'];
-const PICTURES = ['imageBlock', 'chartBlock'];
+const PICTURES = ['imageBlock', 'chartBlock', 'sketchBlock'];
+/** Pictures that can float with text beside them. */
+const FLOATS = ['imageBlock', 'sketchBlock'];
 
 /** The floated picture the top-level block at `index` sits after (until a heading, cleared block or centred picture), or null. */
 function floatBefore(parent: PMNode, index: number): number | null {
   for (let j = index - 1; j >= 0; j--) {
     const n = parent.child(j);
     if (n.type.name === 'heading' || n.attrs.clear) return null;
-    if (n.type.name === 'imageBlock') return n.attrs.align === 'left' || n.attrs.align === 'right' ? j : null;
+    if (FLOATS.includes(n.type.name)) return n.attrs.align === 'left' || n.attrs.align === 'right' ? j : null;
   }
   return null;
 }

@@ -118,3 +118,35 @@ export function setOutlineShown(on: boolean) {
   write(KEY_OUTLINE, on ? 'shown' : 'hidden');
   applyAppearance();
 }
+
+/** Sketch tools last used on this device: tool, colour and size per tool, and whether a finger draws. */
+export interface SketchPrefs {
+  tool: 'pen' | 'hl' | 'eraser';
+  pen: { color: string; size: 's' | 'm' | 'l' };
+  hl: { color: string; size: 's' | 'm' | 'l' };
+  /** Off by default: a finger scrolls, only the S Pen (or a mouse) draws. */
+  finger: boolean;
+}
+
+const KEY_SKETCH = 'upsc.sketch';
+const SKETCH_DEFAULTS: SketchPrefs = { tool: 'pen', pen: { color: 'ink', size: 'm' }, hl: { color: 'hl-yellow', size: 'm' }, finger: false };
+
+export function getSketchPrefs(): SketchPrefs {
+  try {
+    const v = JSON.parse(read(KEY_SKETCH) ?? 'null') as Partial<SketchPrefs> | null;
+    const size = (s: unknown, d: 's' | 'm' | 'l') => (s === 's' || s === 'm' || s === 'l' ? s : d);
+    const color = (c: unknown, d: string) => (typeof c === 'string' && /^[a-z-]+$/.test(c) ? c : d);
+    return {
+      tool: v?.tool === 'hl' || v?.tool === 'eraser' ? v.tool : 'pen',
+      pen: { color: color(v?.pen?.color, 'ink'), size: size(v?.pen?.size, 'm') },
+      hl: { color: color(v?.hl?.color, 'hl-yellow'), size: size(v?.hl?.size, 'm') },
+      finger: v?.finger === true
+    };
+  } catch {
+    return structuredClone(SKETCH_DEFAULTS);
+  }
+}
+
+export function setSketchPrefs(p: SketchPrefs) {
+  write(KEY_SKETCH, JSON.stringify(p));
+}
