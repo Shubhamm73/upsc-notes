@@ -989,7 +989,13 @@ html[data-outline='hidden'] .outline { display: none; }
 @media (max-width: 699px) { .head-row { gap: 4px; } .head-undo { width: 44px; } }
 
 /* ---------- text on every side of a picture ---------- */
-.rich [data-clear], .rich h2, .rich h3, .rich h4 { clear: both; }
+.rich [data-clear='both'], .rich h2:not([data-clear='none']), .rich h3:not([data-clear='none']), .rich h4:not([data-clear='none']) { clear: both; }
+/* 0.11: a chart can float like a picture (Left / Right · text beside) */
+.chart-block[data-align='left'], .chart-block[data-align='right'] { margin: 0.25em 0 0.6em; }
+.chart-block[data-align='left'] { float: left; margin-right: 1.1em; clear: left; }
+.chart-block[data-align='right'] { float: right; margin-left: 1.1em; clear: right; }
+.chart-block[data-align='center'] { clear: both; }
+@media (max-width: 520px) { .chart-block[data-align='left'], .chart-block[data-align='right'] { float: none; width: auto !important; margin: 0.6em 0; } }
 .tb-ic { display: inline-flex; align-items: center; gap: 6px; }
 .ctx-input, .ctx-select { width: auto; min-height: 44px; padding: 0 10px; font-size: 0.92rem; }
 .caption-input { width: 14em; }
@@ -1171,3 +1177,19 @@ button.danger-btn { background: var(--error); border-color: var(--error); color:
 .word-place { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .word-place .chip-btn { gap: 6px; }
 .canvas-head .back-link span { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ======================= 0.11: Google Drive backup ======================= */
+.drive-status { font-weight: 700; color: var(--fg); }
+.drive .warn:empty { display: none; }
+.drive-options, .drive-list { display: grid; gap: 10px; }
+.drive-option, .drive-pick { display: grid; gap: 2px; text-align: left; min-height: 56px; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
+.drive-option span, .drive-pick span { color: var(--muted); font-size: 0.92rem; }
+.drive-option:hover, .drive-pick:hover { border-color: var(--accent); }
+.drive-pick[aria-pressed='true'] { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); color: var(--fg); border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.drive-pick .tag { margin-left: 8px; font-size: 0.75rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); vertical-align: 2px; }
+.drive-list { max-height: 50vh; overflow: auto; padding: 2px; }
+.chip-btn { min-height: 44px; border-radius: 999px; padding: 0 16px; }
+.drive-restore-status:empty { display: none; }
+.restore-card { margin-bottom: 18px; display: grid; gap: 10px; }
+.restore-card p { margin: 0; color: var(--muted); }
+.restore-card .actions { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }

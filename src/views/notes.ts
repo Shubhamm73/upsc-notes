@@ -22,6 +22,7 @@ import { prettyDate, ymd } from '../lib/dates';
 import { h } from '../lib/h';
 import { icon } from '../lib/icons';
 import type { AppContext, View } from '../app';
+import { bigChange } from '../lib/changes';
 
 /** GS answer meter: marks at 150 and 250 words; the bar is full at 300. */
 const METER_MAX = 300;
@@ -566,6 +567,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         if (isNew) {
           isNew = false;
           history.replaceState(null, '', `#/n/${snapshot.id}`);
+          bigChange('new note');
         }
         if (!dirty) {
           ctx.status('Saved on this tablet');
@@ -1311,6 +1313,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       d.deletedAt = Date.now();
       dirty = true;
       await save();
+      bigChange('note to trash');
       ctx.toast(`Moved “${d.title || 'Untitled note'}” to Trash. Restore it from Trash if you need it.`);
       ctx.go(backLink.getAttribute('href') ?? '#/notes');
     };

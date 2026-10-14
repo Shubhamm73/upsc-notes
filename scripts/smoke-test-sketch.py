@@ -426,7 +426,7 @@ with sync_playwright() as p:
     bpath = OUT / "sketch-backup.json"
     dl.value.save_as(bpath)
     bk = json.loads(bpath.read_text())
-    check(bk["format"] == 4, f"backup format 4 (0.10; 3 added sketches) ({bk['format']})")
+    check(bk["format"] == 5, f"backup format 5 (0.11; 3 added sketches) ({bk['format']})")
     bnote = next(n for n in bk["notes"] if n["title"] == "Monsoon sketch")
     check(json.dumps(final) in json.dumps(bnote), "the backup carries every stroke")
     fresh = browser.new_context(viewport={"width": 1280, "height": 800}, accept_downloads=True)
@@ -442,7 +442,7 @@ with sync_playwright() as p:
     p2.wait_for_selector(".sketch-paper")
     p2.wait_for_timeout(300)
     check(p2.evaluate(INK, [0, 0, 0, 1, 1]) > 200, "and draws it")
-    newer = dict(bk, format=5)
+    newer = dict(bk, format=bk["format"] + 1)
     npath = OUT / "newer.json"
     npath.write_text(json.dumps(newer))
     p2.goto(URL + "#/settings")

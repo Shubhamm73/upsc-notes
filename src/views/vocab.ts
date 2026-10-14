@@ -11,6 +11,7 @@ import { celebrationsOn } from '../lib/prefs';
 import { h } from '../lib/h';
 import type { AppContext, View } from '../app';
 import { logReviewDay, milestoneText } from '../lib/activity';
+import { bigChange } from '../lib/changes';
 
 const CONTEXTS: VocabUse['context'][] = ['Essay', 'GS answer', 'Interview', 'Other'];
 
@@ -477,6 +478,7 @@ export function mountVocab(root: HTMLElement, ctx: AppContext): View {
       d.deletedAt = Date.now();
       dirty = true;
       await save();
+      bigChange('word to trash');
       ctx.toast(`Moved “${d.word || 'Untitled word'}” to Trash.`);
       ctx.go(backLink.getAttribute('href') ?? '#/vocab');
     });

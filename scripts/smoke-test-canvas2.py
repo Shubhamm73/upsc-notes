@@ -418,7 +418,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(150)
     check(page.locator(".section-body .img-caption").inner_text() == "Fig: Two halves", "caption shows under the picture")
     check(page.evaluate("getComputedStyle(document.querySelector('.section-body .img-block')).shapeOutside") == "none", "with a caption, text wraps the picture's box")
-    # a heading always starts below a floated picture
+    # 0.11: a heading made beside a floated picture stays beside it; ↓ Below picture puts it under
     ed.click()
     page.keyboard.press("Control+End")
     page.wait_for_timeout(150)
@@ -432,7 +432,13 @@ with sync_playwright() as p:
     fb = page.locator(".section-body .img-block").bounding_box()
     hb = page.locator(".section-body h2", has_text="Sub heading").bounding_box()
     sb = page.locator(".section-body p", has_text="Beside the triangle").bounding_box()
-    check(sb["y"] < fb["y"] + fb["height"] and hb["y"] >= fb["y"] + fb["height"] - 1, "a heading after a floated picture starts below it")
+    hx = page.evaluate("""() => { const h = [...document.querySelectorAll('.section-body h2')].find(e => e.textContent.includes('Sub heading'));
+        const r = document.createRange(); r.selectNodeContents(h); return r.getClientRects()[0].left; }""")  # the h2's box runs under the float
+    check(sb["y"] < fb["y"] + fb["height"] and hb["y"] < fb["y"] + fb["height"] and hx >= fb["x"] + fb["width"] - 1, "a heading made beside a floated picture stays beside it (0.11)")
+    page.click("#ctxbar button:has-text('↓ Below picture')")
+    page.wait_for_timeout(200)
+    hb = page.locator(".section-body h2", has_text="Sub heading").bounding_box()
+    check(hb["y"] >= fb["y"] + fb["height"] - 1, "↓ Below picture starts the heading below it")
     expect(page.locator("#save-state")).to_have_attribute("data-state", "saved", timeout=5000)
     page.reload()
     page.wait_for_selector(".section-body .img-block img[src^='blob:']")

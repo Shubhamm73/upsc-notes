@@ -12,6 +12,9 @@ import { mountAppearance } from './views/appearance';
 import { mountReview } from './views/review';
 import { openSearch } from './views/search';
 import { icon } from './lib/icons';
+import { takeRedirectResult } from './lib/drive';
+import { startDriveSchedule } from './lib/drive-backup';
+import { resumeAfterRedirect } from './views/drive-ui';
 
 export interface View {
   route(parts: string[]): void;
@@ -198,10 +201,16 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
   });
 
   window.addEventListener('hashchange', () => void route());
+  // A full-page Google sign-in that just came back: the token leaves the address before the first screen.
+  const signedIn = takeRedirectResult();
   void ensurePersistence()
     .then(() => purgeOldTrash())
     .catch(() => 0)
     .then(() => ensureFolders())
     .catch(() => 0)
-    .finally(() => void route());
+    .finally(() => {
+      void route();
+      if (signedIn) resumeAfterRedirect(signedIn, ctx);
+      startDriveSchedule();
+    });
 }

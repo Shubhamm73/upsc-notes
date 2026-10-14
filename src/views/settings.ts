@@ -14,8 +14,10 @@ import { daysSince } from '../lib/dates';
 import { h } from '../lib/h';
 import { ensurePersistence, isInstalled, storageStatus } from '../lib/storage';
 import type { AppContext, View } from '../app';
+import { driveSection, reportText } from './drive-ui';
 
 export function mountSettings(root: HTMLElement, ctx: AppContext): View {
+  const drive = driveSection(ctx);
   const statusList = h('dl', { class: 'facts' });
   const lastBackup = h('p', { class: 'last-backup' });
   const importResult = h('p', { class: 'import-result', role: 'status' });
@@ -49,17 +51,18 @@ export function mountSettings(root: HTMLElement, ctx: AppContext): View {
         h(
           'p',
           {},
-          'Notes are saved in this app on this tablet only. Nothing is uploaded. That also means a lost or reset tablet loses everything that is not in a backup file.'
+          'Notes are saved in this app on this tablet only. Nothing is uploaded, except backups to your own Google Drive when you turn that on below. A lost or reset tablet loses everything that is not in a backup.'
         ),
         statusList,
         protectBtn
       ),
+      drive.el,
       h(
         'section',
         { class: 'card-block' },
-        h('h2', {}, 'Back up'),
+        h('h2', {}, 'Backup file'),
         lastBackup,
-        h('p', {}, 'Make a backup at least once a week and copy it to Google Drive. The file holds every note, word and image, including trash.'),
+        h('p', {}, 'Save a backup file by hand at any time. The file holds every note, word, image, folder and setting, including trash.'),
         h('div', { class: 'actions' }, saveBtn, shareBtn)
       ),
       h(
@@ -160,7 +163,7 @@ export function mountSettings(root: HTMLElement, ctx: AppContext): View {
     importResult.textContent = 'Importing…';
     try {
       const r = await importBackup(file);
-      importResult.textContent = `Imported: ${r.added} added, ${r.updated} updated, ${r.keptNewer} already newer here, ${r.images} images, ${r.cards} review cards, ${r.folders} folders.`;
+      importResult.textContent = reportText(r);
       ctx.toast('Import finished.');
     } catch (e) {
       importResult.textContent =
@@ -182,6 +185,8 @@ export function mountSettings(root: HTMLElement, ctx: AppContext): View {
   return {
     route() {},
     async flush() {},
-    async destroy() {}
+    async destroy() {
+      drive.destroy();
+    }
   };
 }

@@ -13,7 +13,10 @@ the server to the NEW build, check the "new version" banner, tap Reload now, the
   build refuses a format-4 backup and stores nothing;
 - the note is intact, unchanged (same updatedAt) and still editable;
 - the old backup file imports into the new build intact, on a fresh tablet and on this one, with
-  its cards made once (no duplicates).
+  its cards made once (no duplicates);
+- 0.11 (backup format 5): his device settings (theme, font, width, streak moments) survive the update, the
+  upgraded tablet's backup carries them and every record, a fresh tablet takes them, and the old build
+  refuses a format-5 backup and stores nothing.
 
 Usage (port 4173 must be free; the script starts and stops the servers itself):
   git worktree add /tmp/prev <previous-release-commit> && cd /tmp/prev && ln -s <repo>/node_modules . && npm run build
@@ -218,6 +221,9 @@ try:
         expect(page.locator(".save-status")).to_have_text("Saved on this tablet", timeout=5000)
         page.click("#mark-reviewed")
         page.wait_for_timeout(1500)
+        # his settings on this device (localStorage, as every release since 0.6 keeps them)
+        OLD_SETTINGS = {"upsc.theme": "night", "upsc.font": "editorial", "upsc.width": "comfortable", "upsc.celebrate": "off"}
+        page.evaluate("(s) => { for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); }", OLD_SETTINGS)
         # a word
         page.goto(URL + "#/v/new")
         page.fill("#v-word", "Ubiquitous")
@@ -259,6 +265,8 @@ try:
         want = {"notes": len(before), "vocab": len(old["vocab"]), "images": len(old["images"])}
         if "cards" in old_file["counts"]:  # 0.8+ backups also count review cards
             want["cards"] = len(old_cards)
+        if "folders" in old_file["counts"]:  # 0.10+ backups also count folders
+            want["folders"] = len(page.evaluate(ALL, "folders") or [])
         check(old_file["counts"] == want, f"{old_v}: backup file saved {old_file['counts']}")
 
         # ---- switch the server to the new build: the installed app offers the update ----
@@ -283,6 +291,11 @@ try:
         check(key(new["vocab"]) == key(old["vocab"]), f"every word is unchanged ({len(new['vocab'])})")
         check(new["images"] == old["images"], f"every image is unchanged, bytes included ({len(new['images'])})")
         check(key(new["meta"]) == key(old["meta"]), "stored settings (streak days, last backup) unchanged")
+        got_settings = page.evaluate("(ks) => Object.fromEntries(ks.map(k => [k, localStorage.getItem(k)]))", list(OLD_SETTINGS))
+        check(got_settings == OLD_SETTINGS, f"his device settings (theme, font, width, streak moments) unchanged ({got_settings})")
+        if ver(new_v) >= (0, 11, 0):
+            check(page.evaluate("localStorage.getItem('upsc.driveState')") is None and page.evaluate("document.documentElement.dataset.theme") == "night",
+                  "0.11: Drive backup is off until he connects it; the night theme still applies")
         check(mine(new["notes"]).get("insights") == mine(before).get("insights"), "quick insights unchanged")
         if ver(new_v) >= (0, 8, 0):
             check(page.evaluate(DB_VERSION) == (40 if ver(new_v) >= (0, 10, 0) else 30), f"database upgraded to Dexie v{page.evaluate(DB_VERSION) // 10}")
@@ -305,7 +318,8 @@ try:
             want_ids = {f"main:{k}" for k in seeded} | {f"gen:{k}" for k in seeded} | {f"wd:{d}" for d in days} | {f"wm:{d[:7]}" for d in days}
             check({f["id"] for f in folders} == want_ids, f"folders: 9 main subjects with General, {len(days)} dates in {len({d[:7] for d in days})} months, nothing else ({len(folders)})")
             check(all(f["updatedAt"] == 0 and f["deletedAt"] is None for f in folders), "folders the app makes never win a merge (updatedAt 0)")
-            check(not any("folderId" in n for n in new["notes"]) and not any("folderId" in w for w in new["vocab"]), "the upgrade added no folderId to any note or word")
+            if ver(old_v) < (0, 10, 0):
+                check(not any("folderId" in n for n in new["notes"]) and not any("folderId" in w for w in new["vocab"]), "the upgrade added no folderId to any note or word")
             check(opened_in < 8, f"Reload now → upgraded and showing the main subjects in {opened_in:.1f} s ({len(new['notes'])} notes, {len(new['vocab'])} words)")
             # the screens show everything where it was
             by_subject = {}
@@ -373,6 +387,19 @@ try:
         check((page.evaluate(ALL, "cards") or []) == cards_here, "no duplicate cards from re-importing")
         if ver(new_v) >= (0, 10, 0):
             check((page.evaluate(ALL, "folders") or []) == folders_here, "no folder added or changed by re-importing")
+        upgraded_backup = None
+        if ver(new_v) >= (0, 11, 0):
+            # 0.11: the upgraded tablet's backup (format 5) carries his settings, chosen before 0.11
+            with page.expect_download() as dl:
+                page.click("#backup-download")
+            upgraded_backup = os.path.join(profile + "-files", "upgraded-backup.json")
+            dl.value.save_as(upgraded_backup)
+            ub = json.loads(open(upgraded_backup).read())
+            sv = {k: v["value"] for k, v in ub.get("settings", {}).items()}
+            check(ub["format"] == 5 and sv.get("theme") == "night" and sv.get("font") == "editorial" and sv.get("width") == "comfortable" and sv.get("celebrate") == "off",
+                  f"the upgraded tablet's backup is format 5 with his settings ({sv})")
+            check(len(ub["notes"]) == len(new["notes"]) and len(ub["vocab"]) == len(new["vocab"]) and len(ub["images"]) == len(new["images"]),
+                  f"…and every note, word and picture ({len(ub['notes'])}, {len(ub['vocab'])}, {len(ub['images'])})")
         check(not errors, f"no page errors {errors}")
         ctx.close()
 
@@ -405,7 +432,21 @@ try:
             ff = fresh.evaluate(ALL, "folders") or []
             strip = lambda fs: sorted([{k: v for k, v in f.items() if k != "createdAt"} for f in fs], key=lambda f: f["id"])
             check(strip(ff) == strip(folders_here), f"fresh tablet: the same folders as the upgraded one ({len(ff)})")
-            check(not any("folderId" in n for n in fresh.evaluate(ALL, "notes")), "fresh tablet: the import added no folderId to any note")
+            if ver(old_v) < (0, 10, 0):
+                check(not any("folderId" in n for n in fresh.evaluate(ALL, "notes")), "fresh tablet: the import added no folderId to any note")
+        if upgraded_backup:
+            fresh2 = fresh_browser.new_page()
+            fresh2.goto(URL + "#/settings")
+            fresh2.wait_for_selector("#import-file", state="attached")
+            fresh2.set_input_files("#import-file", upgraded_backup)
+            expect(fresh2.locator(".import-result")).to_contain_text("Imported:", timeout=60000)
+            check(int((re.search(r"(\d+) settings", fresh2.inner_text(".import-result")) or [0, 0])[1]) >= 4 and fresh2.evaluate("document.documentElement.dataset.theme") == "night"
+                  and fresh2.evaluate("localStorage.getItem('upsc.width')") == "comfortable", f"a fresh tablet takes his settings from it ({fresh2.inner_text('.import-result')})")
+            g2 = snapshot(fresh2)
+            ub = json.loads(open(upgraded_backup).read())
+            check(key(g2["notes"]) == key(ub["notes"]) and key(g2["vocab"]) == key(ub["vocab"]) and g2["images"] == sorted(ub["images"], key=lambda i: i["id"]),
+                  f"…and every note, word and picture, byte-for-byte ({len(g2['notes'])}, {len(g2['vocab'])}, {len(g2['images'])})")
+            fresh2.close()
         # ---- 0.9+: a backup with a sketch is refused by the old build (it would open that section blank) ----
         if ver(new_v) >= (0, 9, 0) and ver(old_v) < (0, 9, 0):
             fresh.goto(URL + "#/n/new/blank")
@@ -426,7 +467,7 @@ try:
                 fresh.click("#backup-download")
             newer = os.path.join(profile + "-files", "new-backup.json")
             dl.value.save_as(newer)
-            check(json.loads(open(newer).read())["format"] == 3, "the new build's backup is format 3")
+            check(json.loads(open(newer).read())["format"] >= 3, "the new build's backup is format 3+")
             fresh_browser.close()
             serve(OLD)
             back = p.chromium.launch()
@@ -455,7 +496,7 @@ try:
             newer = os.path.join(profile + "-files", "new-backup.json")
             dl.value.save_as(newer)
             nb = json.loads(open(newer).read())
-            check(nb["format"] == 4 and any(f["name"] == "Polity" for f in nb["folders"]), "the new build's backup is format 4 and carries the folders")
+            check(nb["format"] >= 4 and any(f["name"] == "Polity" for f in nb["folders"]), "the new build's backup is format 4+ and carries the folders")
             fresh_browser.close()
             serve(OLD)
             back = p.chromium.launch()
@@ -467,6 +508,23 @@ try:
             oldpage.wait_for_timeout(2500)
             check("newer version" in oldpage.inner_text("body"), f"{old_v} refuses a {new_v} backup (\"made by a newer version\") instead of dropping the folders")
             check(oldpage.evaluate(ALL_NOTES) == [] and (oldpage.evaluate(ALL, "vocab") or []) == [], f"{old_v} stored nothing from it")
+            back.close()
+        elif ver(new_v) >= (0, 11, 0) and ver(old_v) < (0, 11, 0):
+            # ---- 0.11+: a backup with settings (format 5) is refused by the old build (it would drop them) ----
+            fresh_browser.close()
+            serve(OLD)
+            back = p.chromium.launch()
+            oldpage = back.new_page()
+            oldpage.on("pageerror", lambda e: errors.append(str(e)))
+            oldpage.goto(URL + "#/settings")
+            oldpage.wait_for_selector("#import-file", state="attached")
+            oldpage.set_input_files("#import-file", upgraded_backup)
+            oldpage.wait_for_timeout(2500)
+            check("newer version" in oldpage.inner_text("body"), f"{old_v} refuses a {new_v} backup (format 5: \"made by a newer version\")")
+            # (a fresh 0.10 makes its own seeded folders on launch, all with updatedAt 0)
+            check(oldpage.evaluate(ALL_NOTES) == [] and (oldpage.evaluate(ALL, "vocab") or []) == [] and (oldpage.evaluate(ALL, "cards") or []) == []
+                  and all(f["updatedAt"] == 0 for f in (oldpage.evaluate(ALL, "folders") or [])), f"{old_v} stored nothing from it")
+            check(oldpage.evaluate("localStorage.getItem('upsc.theme')") is None, f"{old_v} took none of its settings")
             back.close()
         else:
             fresh_browser.close()

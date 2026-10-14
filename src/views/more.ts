@@ -4,6 +4,7 @@ import { h } from '../lib/h';
 import { icon } from '../lib/icons';
 import { isInstalled } from '../lib/storage';
 import type { AppContext, View } from '../app';
+import { getState, missedDays } from '../lib/drive-backup';
 
 export function mountMore(root: HTMLElement, ctx: AppContext): View {
   const trashCount = h('span', { class: 'meta' });
@@ -43,6 +44,20 @@ export function mountMore(root: HTMLElement, ctx: AppContext): View {
 
   // The backup reminder lives here (not as a banner over every screen): only once there are notes.
   void Promise.all([db.notes.count(), getMeta<number | null>('lastBackupAt', null)]).then(([notes, last]) => {
+    // Drive backup on: warning colour once it is more than twice the schedule behind (0.11).
+    if (getState().on) {
+      const missed = missedDays();
+      const lastAt = getState().lastAt;
+      const ago = lastAt ? daysSince(lastAt) : null;
+      backupSub.textContent =
+        missed !== null
+          ? lastAt
+            ? `Drive backup missed: last one ${missed} days ago. Back up now.`
+            : 'Drive backup missed: none made yet. Back up now.'
+          : `Google Drive backup on · last ${ago === null ? 'not yet' : ago === 0 ? 'today' : ago === 1 ? 'yesterday' : `${ago} days ago`}`;
+      backupSub.classList.toggle('warn', missed !== null);
+      return;
+    }
     const days = daysSince(last);
     if (!notes || (days !== null && days <= 7)) return;
     backupSub.textContent = days === null ? 'No backup yet. Back up now.' : `Last backup ${days} days ago. Back up now.`;

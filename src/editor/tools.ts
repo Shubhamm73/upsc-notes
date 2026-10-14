@@ -423,8 +423,8 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     const s = e.state.selection;
     return s instanceof NodeSelection && (name ? s.node.type.name === name : ['imageBlock', 'chartBlock', 'sketchBlock'].includes(s.node.type.name));
   };
-  /** A selected picture or sketch: both float with text beside them and take a caption. */
-  const FLOATS = ['imageBlock', 'sketchBlock'];
+  /** A selected picture, sketch or chart (0.11): they float with text beside them. Pictures and sketches take a caption. */
+  const FLOATS = ['imageBlock', 'sketchBlock', 'chartBlock'];
   const selectedFloat = (e: Editor) => {
     const s = e.state.selection;
     return s instanceof NodeSelection && FLOATS.includes(s.node.type.name) ? s : null;
@@ -637,10 +637,12 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
       tableOps.hidden = !inTable(e);
       const float = selectedFloat(e);
       imageOps.hidden = !float;
-      const sketch = float?.node.type.name === 'sketchBlock';
-      imageLabel.textContent = sketch ? 'Sketch' : 'Image';
-      imageOps.setAttribute('aria-label', sketch ? 'Sketch' : 'Image');
-      cropBtn.hidden = sketch;
+      const type = float?.node.type.name;
+      const label = type === 'sketchBlock' ? 'Sketch' : type === 'chartBlock' ? 'Chart' : 'Image';
+      imageLabel.textContent = label;
+      imageOps.setAttribute('aria-label', label);
+      cropBtn.hidden = type !== 'imageBlock';
+      captionInput.hidden = type === 'chartBlock'; // a chart has its own title
       blockOps.hidden = !selectedBlock(e);
       const kind = calloutKindAt(e);
       calloutOps.hidden = !kind;

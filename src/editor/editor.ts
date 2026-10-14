@@ -100,7 +100,8 @@ function slashExtension(hook: SlashHook) {
  * so paragraphs keep the shape older notes and backups have.
  */
 function tidy(n: DocNode): DocNode {
-  if (n.attrs && 'clear' in n.attrs && !n.attrs.clear) {
+  // `clear: false` matters only on a heading (it sits beside a picture, 0.11); null is the default everywhere.
+  if (n.attrs && 'clear' in n.attrs && (n.attrs.clear == null || (n.attrs.clear === false && n.type !== 'heading'))) {
     const { clear: _off, ...rest } = n.attrs;
     n.attrs = rest;
     if (!Object.keys(rest).length) delete n.attrs;

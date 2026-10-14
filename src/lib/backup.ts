@@ -2,15 +2,18 @@ import { db, getMeta, RENAMED_SUBJECTS, SCHEMA_VERSION, setMeta, type Folder, ty
 import { planFolders } from './folder-plan';
 import { ymd } from './dates';
 import { syncNoteCards } from './review';
+import { applySettings, collectSettings, type SettingsOut } from './prefs';
+import { bigChange } from './changes';
 
 const APP = 'upsc-notes';
 /**
  * 1 = 0.1–0.7 (notes, words, images); 2 = 0.8 (adds review cards and the streak's review days);
- * 3 = 0.9 (notes may hold sketch blocks); 4 = 0.10+ (adds folders; notes and words may name their folder).
+ * 3 = 0.9 (notes may hold sketch blocks); 4 = 0.10 (adds folders; notes and words may name their folder);
+ * 5 = 0.11+ (adds settings: theme, font, width, outline, streak moments, sketch tools, last subject, Drive schedule).
  * An older app refuses a newer format instead of opening sections it can't show as blank pages
- * (format 3) or dropping the folders (format 4).
+ * (format 3), dropping the folders (format 4) or the settings (format 5).
  */
-const FORMAT = 4;
+export const FORMAT = 5;
 
 interface ImageOut extends Omit<ImageRec, 'blob'> {
   type: string;
@@ -31,6 +34,8 @@ export interface BackupFile {
   /** Format 4+. Absent in older backups: folders are then made the way the 0.10 upgrade makes them. */
   folders?: Folder[];
   meta?: { reviewDays?: string[] };
+  /** Format 5+. Each setting with the time it was chosen; absent in older backups (settings stay as they are). */
+  settings?: SettingsOut;
 }
 
 export interface ImportReport {
@@ -40,6 +45,8 @@ export interface ImportReport {
   images: number;
   cards: number;
   folders: number;
+  /** Settings taken from the file (newer than this device's). */
+  settings: number;
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -59,7 +66,7 @@ function base64ToBlob(data: string, type: string): Blob {
 }
 
 /** Everything on this device, trash included, as one JSON file. */
-export async function buildBackup(): Promise<{ blob: Blob; filename: string; counts: BackupFile['counts'] }> {
+export async function buildBackup(): Promise<{ blob: Blob; filename: string; counts: BackupFile['counts']; exportedAt: string }> {
   const [notes, vocab, imgs, cards, folders, reviewDays] = await db.transaction('r', [db.notes, db.vocab, db.images, db.cards, db.folders, db.meta], () =>
     Promise.all([db.notes.toArray(), db.vocab.toArray(), db.images.toArray(), db.cards.toArray(), db.folders.toArray(), getMeta<string[]>('reviewDays', [])])
   );
@@ -79,10 +86,11 @@ export async function buildBackup(): Promise<{ blob: Blob; filename: string; cou
     images,
     cards,
     folders,
-    meta: { reviewDays }
+    meta: { reviewDays },
+    settings: collectSettings()
   };
   const blob = new Blob([JSON.stringify(file)], { type: 'application/json' });
-  return { blob, filename: `upsc-notes-backup-${ymd()}.json`, counts };
+  return { blob, filename: `upsc-notes-backup-${ymd()}.json`, counts, exportedAt: file.exportedAt };
 }
 
 export async function markBackedUp() {
@@ -106,7 +114,8 @@ function validate(raw: unknown): BackupFile {
     (f.cards !== undefined && !Array.isArray(f.cards)) ||
     (f.format >= 2 && !Array.isArray(f.cards)) ||
     (f.folders !== undefined && !Array.isArray(f.folders)) ||
-    (f.format >= 4 && !Array.isArray(f.folders))
+    (f.format >= 4 && !Array.isArray(f.folders)) ||
+    (f.settings !== undefined && (!f.settings || typeof f.settings !== 'object' || Array.isArray(f.settings)))
   ) {
     throw new BackupError('This backup file is incomplete or damaged. Try an older backup file.');
   }
@@ -160,15 +169,20 @@ function validate(raw: unknown): BackupFile {
  * A record is written only when it is new here or newer in the file.
  */
 export async function importBackup(file: File): Promise<ImportReport> {
+  return importBackupText(await file.text());
+}
+
+/** The same import from the file's text: a file picked on the tablet, or a backup downloaded from Google Drive. */
+export async function importBackupText(text: string): Promise<ImportReport> {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await file.text());
+    parsed = JSON.parse(text);
   } catch {
     throw new BackupError("This file couldn't be read as a backup. Pick the .json or .json.txt file the app saved.");
   }
   const data = validate(parsed);
   for (const n of data.notes) if (RENAMED_SUBJECTS[n.subject]) n.subject = RENAMED_SUBJECTS[n.subject];
-  const report: ImportReport = { added: 0, updated: 0, keptNewer: 0, images: 0, cards: 0, folders: 0 };
+  const report: ImportReport = { added: 0, updated: 0, keptNewer: 0, images: 0, cards: 0, folders: 0, settings: 0 };
   /** Notes written by this import: their cards are brought in step with their quick insights afterwards. */
   const written: Note[] = [];
 
@@ -226,6 +240,9 @@ export async function importBackup(file: File): Promise<ImportReport> {
     const put = planFolders(folders, notes, words, Date.now());
     if (put.length) await db.folders.bulkPut(put);
   });
+  // Settings live in localStorage, outside the transaction: taken only once everything else is in.
+  report.settings = applySettings(data.settings);
+  if (report.added || report.updated) bigChange('import');
   return report;
 }
 

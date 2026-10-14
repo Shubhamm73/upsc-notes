@@ -16,6 +16,8 @@ import {
   sortFolders,
   wordFolderId
 } from './folder-plan';
+import { writeSetting } from './prefs';
+import { bigChange } from './changes';
 
 export { dateId, generalId, monthId, OTHERS, OTHERS_GENERAL } from './folder-plan';
 
@@ -91,11 +93,7 @@ export function lastFolder(): string {
   }
 }
 export function setLastFolder(id: string) {
-  try {
-    localStorage.setItem(LAST, id);
-  } catch {
-    /* private mode: the default is fine */
-  }
+  if (lastFolder() !== id) writeSetting(LAST, id); // stamped: it travels in the backup (format 5)
 }
 /** A live subject for a new note: the one asked for, else the last one used, else the first there is. */
 export function homeFor(index: FolderIndex, wanted?: string | null): string {
@@ -202,7 +200,7 @@ export function canDelete(idx: FolderIndex, f: Folder): boolean {
  * so restoring it brings that folder back. Nothing is deleted for good from here.
  */
 export async function deleteFolder(id: string): Promise<{ notes: number; words: number }> {
-  return db.transaction('rw', db.folders, db.notes, db.vocab, async () => {
+  const done = await db.transaction('rw', db.folders, db.notes, db.vocab, async () => {
     const [folders, notes, words] = await Promise.all([db.folders.toArray(), db.notes.toArray(), db.vocab.toArray()]);
     const idx = new FolderIndex(folders);
     const target = idx.get(id);
@@ -219,4 +217,6 @@ export async function deleteFolder(id: string): Promise<{ notes: number; words: 
     }));
     return { notes: trashNotes.length, words: trashWords.length };
   });
+  bigChange('folder deleted');
+  return done;
 }

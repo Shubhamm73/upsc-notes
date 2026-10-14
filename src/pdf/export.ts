@@ -190,12 +190,16 @@ function textHeight(n: DocNode, width: number): number {
   if (n.type === 'bulletList' || n.type === 'orderedList') {
     return (n.content ?? []).reduce((h, li) => h + lines(docToText(li)) * 13.5 + 2, 6);
   }
+  if (n.type === 'table') return (n.content ?? []).length * 22 + 10;
+  if (n.type === 'callout' || n.type === 'blockquote') return lines(docToText(n)) * 13.5 + 26;
   return lines(docToText(n)) * 13.5 + (n.type === 'heading' ? 10 : 6);
 }
 
-const WRAPS = ['paragraph', 'bulletList', 'orderedList'];
-/** Text that can print beside a floated picture: not a heading, not a block set to start below it. */
-const wraps = (n: DocNode | undefined) => !!n && WRAPS.includes(n.type) && !n.attrs?.clear;
+/** Blocks that can print beside a floated picture, as on screen (headings, callouts, quotes and tables since 0.11). */
+const WRAPS = ['paragraph', 'bulletList', 'orderedList', 'heading', 'blockquote', 'callout', 'table'];
+/** …unless set to start below it: `clear: true`, or a heading not set to sit beside it (`clear: false`). */
+const wraps = (n: DocNode | undefined) =>
+  !!n && WRAPS.includes(n.type) && n.attrs?.clear !== true && !(n.type === 'heading' && n.attrs?.clear !== false);
 
 /** A picture's caption, under it. */
 function captionOf(n: DocNode, alignment: string): Content[] {
@@ -209,10 +213,12 @@ function blocks(nodes: DocNode[] | undefined, ctx: Ctx): Content[] {
   for (let i = 0; i < list.length; i++) {
     const n = list[i];
     const align = n.attrs?.align;
-    const img = pictureOf(n, ctx);
-    // A left/right image with text after it prints side by side with that text, as on screen:
-    // the text blocks that fit next to the picture's height go in the column beside it.
-    if (img && (align === 'left' || align === 'right') && wraps(list[i + 1])) {
+    const floated = (align === 'left' || align === 'right') && wraps(list[i + 1]);
+    const chart = floated && n.type === 'chartBlock' ? readChart(n.attrs as Partial<ChartData>) : null;
+    const img: Pic | undefined = chart ? { url: chartToPng(chart), w: 2, h: 1 } : floated ? pictureOf(n, ctx) : undefined;
+    // A left/right picture, sketch or chart with text after it prints side by side with that text, as on
+    // screen: the text blocks that fit next to the picture's height go in the column beside it.
+    if (img && floated) {
       const pct = Math.min(100, Math.max(10, Number(n.attrs?.width ?? 50)));
       const w = Math.min((ctx.width * pct) / 100, ctx.width - 120);
       const imgH = Math.min((w * img.h) / img.w, 640);
@@ -223,7 +229,8 @@ function blocks(nodes: DocNode[] | undefined, ctx: Ctx): Content[] {
         used += textHeight(list[i + 1], textW);
         beside.push(list[++i]);
       }
-      const picture = { stack: [{ image: img.url, width: w, height: imgH }, ...captionOf(n, 'left')] };
+      const title: Content[] = chart ? [{ text: chart.title || 'Chart', bold: true, margin: [0, 0, 0, 4] }] : [];
+      const picture = { stack: [...title, { image: img.url, width: w, height: imgH }, ...captionOf(n, 'left')] };
       const text = { width: '*', stack: blocks(beside, { ...ctx, width: textW }) };
       out.push({ columns: align === 'left' ? [{ width: w, stack: [picture] }, text] : [text, { width: w, stack: [picture] }], columnGap: 14, margin: [0, 4, 0, 10] });
       continue;
@@ -279,11 +286,13 @@ function block(n: DocNode, ctx: Ctx): Content | null {
     }
     case 'chartBlock': {
       const d = readChart(n.attrs as Partial<ChartData>);
-      const w = Math.min(ctx.width, CONTENT_W);
+      const side = n.attrs?.align === 'left' || n.attrs?.align === 'right' ? String(n.attrs.align) : null;
+      const pct = Math.min(100, Math.max(20, Number(n.attrs?.width ?? 50)));
+      const w = side ? (ctx.width * pct) / 100 : Math.min(ctx.width, CONTENT_W);
       return {
         stack: [
-          { text: d.title || 'Chart', bold: true, margin: [0, 0, 0, 4] },
-          { image: chartToPng(d), width: w, height: w / 2 }
+          { text: d.title || 'Chart', bold: true, margin: [0, 0, 0, 4], alignment: side ?? 'left' },
+          { image: chartToPng(d), width: w, height: w / 2, alignment: side ?? 'left' }
         ],
         unbreakable: true,
         margin: [0, 4, 0, 10]

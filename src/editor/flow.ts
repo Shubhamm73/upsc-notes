@@ -1,25 +1,32 @@
 import { Extension, type Editor } from '@tiptap/core';
-import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState } from '@tiptap/pm/state';
+import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state';
 import type { Node as PMNode } from '@tiptap/pm/model';
 
 /**
  * Text on every side of a picture.
  * - Beside: a Left/Right picture floats; what follows sits beside it.
- * - Below: a block with `clear` starts under the picture (Enter on an empty line beside a
- *   picture, or "Below picture" in the tools). Headings always start below.
+ * - Below: a block with `clear: true` starts under the picture (Enter on an empty line beside a
+ *   picture, or "Below picture" in the tools). A heading starts below unless it has `clear: false`
+ *   (0.11): a line turned into a heading while beside a picture stays beside it, and "Beside picture"
+ *   sets it on any heading. Headings in notes written before 0.11 keep starting below.
  * - Above / below: "+ Line above / below" on a selected picture.
  * - Typing while a picture is selected starts a new line after it instead of replacing it.
  */
 const CLEARABLE = ['paragraph', 'heading', 'bulletList', 'orderedList', 'blockquote', 'callout', 'horizontalRule'];
 const PICTURES = ['imageBlock', 'chartBlock', 'sketchBlock'];
-/** Pictures that can float with text beside them. */
-const FLOATS = ['imageBlock', 'sketchBlock'];
+/** Pictures that can float with text beside them (charts since 0.11). */
+const FLOATS = ['imageBlock', 'sketchBlock', 'chartBlock'];
+
+/** True when the block starts below floated pictures: set to, or a heading not set to sit beside them. */
+export function startsBelow(n: PMNode): boolean {
+  return n.attrs.clear === true || (n.type.name === 'heading' && n.attrs.clear !== false);
+}
 
 /** The floated picture the top-level block at `index` sits after (until a heading, cleared block or centred picture), or null. */
 function floatBefore(parent: PMNode, index: number): number | null {
   for (let j = index - 1; j >= 0; j--) {
     const n = parent.child(j);
-    if (n.type.name === 'heading' || n.attrs.clear) return null;
+    if (startsBelow(n)) return null;
     if (FLOATS.includes(n.type.name)) return n.attrs.align === 'left' || n.attrs.align === 'right' ? j : null;
   }
   return null;
@@ -42,7 +49,7 @@ function blockAt(state: EditorState): { pos: number; node: PMNode; parent: PMNod
 /** True when the caret's block comes after a floated picture and is still beside it on screen. */
 export function besidePicture(editor: Editor): boolean {
   const b = blockAt(editor.state);
-  if (!b || b.node.attrs.clear || b.node.type.name === 'heading') return false;
+  if (!b || startsBelow(b.node)) return false;
   const j = floatBefore(b.parent, b.index);
   if (j === null) return false;
   try {
@@ -60,14 +67,17 @@ export function besidePicture(editor: Editor): boolean {
 /** True when the caret's block was told to start below pictures. */
 export function isBelowPicture(editor: Editor): boolean {
   const b = blockAt(editor.state);
-  return !!b && !!b.node.attrs.clear && b.node.type.name !== 'heading' && floatBefore(b.parent, b.index) !== null;
+  return !!b && startsBelow(b.node) && floatBefore(b.parent, b.index) !== null;
 }
 
 /** Starts the caret's block below the picture (on), or lets it sit beside it again (off). */
 export function setBelowPicture(editor: Editor, on: boolean) {
   const b = blockAt(editor.state);
   if (!b) return;
-  editor.view.dispatch(editor.state.tr.setNodeMarkup(b.pos, undefined, { ...b.node.attrs, clear: on ? true : null }).scrollIntoView());
+  // A heading starts below by default (null) and sits beside with false; other text the other way round.
+  const heading = b.node.type.name === 'heading';
+  const clear = on ? (heading ? null : true) : heading ? false : null;
+  editor.view.dispatch(editor.state.tr.setNodeMarkup(b.pos, undefined, { ...b.node.attrs, clear }).scrollIntoView());
   editor.commands.focus();
 }
 
@@ -93,8 +103,12 @@ export const PictureFlow = Extension.create({
         attributes: {
           clear: {
             default: null,
-            parseHTML: (el: HTMLElement) => (el.getAttribute('data-clear') ? true : null),
-            renderHTML: (attrs: { clear?: boolean | null }) => (attrs.clear ? { 'data-clear': 'both' } : {})
+            parseHTML: (el: HTMLElement) => {
+              const v = el.getAttribute('data-clear');
+              return v === 'none' ? false : v ? true : null;
+            },
+            renderHTML: (attrs: { clear?: boolean | null }) =>
+              attrs.clear ? { 'data-clear': 'both' } : attrs.clear === false ? { 'data-clear': 'none' } : {}
           }
         }
       }
@@ -120,6 +134,25 @@ export const PictureFlow = Extension.create({
     return [
       new Plugin({
         key: new PluginKey('pictureFlow'),
+        // A line beside a picture turned into a heading (slash menu, "## ", Ctrl+Alt+2…) stays beside it.
+        appendTransaction: (trs, oldState, state) => {
+          if (!trs.some((t) => t.docChanged)) return null;
+          let tr: Transaction | null = null;
+          const visit = (parent: PMNode, start: number) => {
+            parent.forEach((n, offset, index) => {
+              const pos = start + offset;
+              if (n.type.name === 'callout') visit(n, pos + 1);
+              if (n.type.name !== 'heading' || n.attrs.clear !== null || floatBefore(parent, index) === null) return;
+              let old = pos;
+              for (let k = trs.length - 1; k >= 0; k--) old = trs[k].mapping.invert().map(old, 1);
+              const was = oldState.doc.nodeAt(old);
+              if (!was || was.type.name === 'heading' || !CLEARABLE.includes(was.type.name) || was.attrs.clear) return;
+              tr = (tr ?? state.tr).setNodeMarkup(pos, undefined, { ...n.attrs, clear: false });
+            });
+          };
+          visit(state.doc, 0);
+          return tr;
+        },
         props: {
           // Android keyboards type through composition, which skips handleTextInput: so on the key
           // itself (key 229 / 'Unidentified' there, a letter elsewhere) the caret first moves to a new

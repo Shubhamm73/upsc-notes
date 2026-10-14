@@ -163,7 +163,7 @@ with sync_playwright() as p:
 
     # ---- a subject: New note files the note there ----
     page.click(f".fcard[data-id='{hist['id']}']")
-    page.wait_for_selector("#new-note")
+    page.wait_for_selector("#crumbs .here:has-text('Modern History')")  # GS1's screen has a #new-note too
     check(page.locator("#crumbs").inner_text().replace("\n", " ").split() == ["Notes", "›", "GS1", "›", "Modern", "History"], "breadcrumb Notes › GS1 › Modern History")
     check(page.locator("#new-note.big").count() == 1 and page.locator(".tpl-row .chip-link").count() == 4, "subject: big New note and Start from: template chips")
     new_note(page, "Revolt of 1857", "Causes and consequences.")
@@ -426,7 +426,7 @@ with sync_playwright() as p:
     dl.value.save_as(bpath)
     bk = json.loads(bpath.read_text())
     here = rows(page, "folders")
-    check(bk["format"] == 4 and bk["counts"]["folders"] == len(here) and len(bk["folders"]) == len(here), f"backup format 4 carries every folder, deleted ones too ({len(here)})")
+    check(bk["format"] == 5 and bk["counts"]["folders"] == len(here) and len(bk["folders"]) == len(here), f"backup format 5 carries every folder, deleted ones too ({len(here)})")
     check(any(f["deletedAt"] for f in bk["folders"]), "deleted folders are in the backup (so a merge can't bring them back)")
 
     fresh = browser.new_context(viewport={"width": 1280, "height": 800})

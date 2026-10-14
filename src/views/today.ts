@@ -10,6 +10,8 @@ import { textToDoc } from '../lib/doc';
 import { h } from '../lib/h';
 import { icon } from '../lib/icons';
 import type { AppContext, View } from '../app';
+import { openRestore } from './drive-ui';
+import { loadGis } from '../lib/drive';
 
 function greeting(d = new Date()) {
   const hr = d.getHours();
@@ -33,6 +35,16 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
   const dueHost = h('section', { class: 'due-card', 'aria-label': 'Due today' });
   const continueHost = h('section', { class: 'panel continue', 'aria-label': 'Continue writing' });
   const ringsHost = h('div', { class: 'rings' });
+  // An empty app (a new or reset tablet): bring everything back from Google Drive, or from a file.
+  const restoreBtn = h('button', { type: 'button', class: 'primary', id: 'today-restore' }, 'Restore from Google Drive');
+  restoreBtn.addEventListener('click', () => openRestore(ctx));
+  const restoreHost = h(
+    'section',
+    { class: 'panel restore-card', id: 'restore-card', 'aria-label': 'Restore', hidden: true },
+    h('h2', {}, 'Used this app on another device?'),
+    h('p', {}, 'Bring back your notes, words, pictures, folders and settings from Google Drive.'),
+    h('div', { class: 'actions' }, restoreBtn, h('a', { href: '#/settings', class: 'meta' }, 'or import a backup file'))
+  );
 
   const captureInput = h('input', { id: 'capture', placeholder: 'RBI kept the repo rate at 6.5%. Link to inflation targeting.', autocomplete: 'off' });
   // Every subject, grouped by main subject; drafts go to Current affairs › General unless he picks another.
@@ -57,6 +69,7 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
       'div',
       { class: 'today' },
       h('header', { class: 'today-head' }, h('div', {}, dateEl, headline), streakEl),
+      restoreHost,
       h('div', { class: 'today-grid' }, dueHost, continueHost),
       h(
         'div',
@@ -132,6 +145,9 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
     const today = ymd();
     index = new FolderIndex(folders);
     paintCapture();
+    const empty = !notes.length && !words.length;
+    if (empty && restoreHost.hidden && navigator.onLine) void loadGis().catch(() => undefined);
+    restoreHost.hidden = !empty;
     const liveNotes = notes.filter((n) => !n.deletedAt);
     const due = dueItems(notes, words, cards, today);
     const count = (t: QueueItem['type']) => due.filter((i) => i.type === t).length;

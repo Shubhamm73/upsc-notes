@@ -130,7 +130,10 @@ export const ChartBlock = Node.create({
       kind: { default: DEFAULT_CHART.kind },
       title: { default: DEFAULT_CHART.title },
       labels: { default: DEFAULT_CHART.labels },
-      series: { default: DEFAULT_CHART.series }
+      series: { default: DEFAULT_CHART.series },
+      // 0.11: left / right float the chart with text beside it, like a picture; width in % of the column.
+      align: { default: 'center', rendered: false },
+      width: { default: 100, rendered: false }
     };
   },
 
@@ -171,6 +174,12 @@ export const ChartBlock = Node.create({
       panel.hidden = true;
       fig.append(head, wrap, panel);
 
+      const place = (n: typeof node) => {
+        const align = ['left', 'right'].includes(n.attrs.align) ? n.attrs.align : 'center';
+        fig.dataset.align = align;
+        fig.style.width = align === 'center' ? '' : `${Math.min(100, Math.max(20, Number(n.attrs.width) || 50))}%`;
+      };
+      place(node);
       const draw = (d: ChartData) => {
         titleEl.textContent = d.title || 'Chart';
         canvas.setAttribute('aria-label', `${d.kind} chart: ${d.title}`);
@@ -181,7 +190,7 @@ export const ChartBlock = Node.create({
       const commit = (d: ChartData) => {
         const pos = typeof getPos === 'function' ? getPos() : undefined;
         if (pos === undefined) return;
-        editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...d }));
+        editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...current.attrs, ...d }));
       };
 
       // ---------- inline data editor ----------
@@ -317,6 +326,7 @@ export const ChartBlock = Node.create({
         update(n) {
           if (n.type.name !== 'chartBlock') return false;
           current = n;
+          place(n);
           draw(readChart(n.attrs));
           return true;
         },

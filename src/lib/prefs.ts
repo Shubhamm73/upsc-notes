@@ -1,7 +1,9 @@
 /**
- * Appearance preferences: theme and font style. They are per-device conveniences,
- * so they live in localStorage (read before first paint, no flash) rather than in
- * the notes database or backups.
+ * Appearance preferences: theme, font style, width, outline, streak moments, sketch tools. They live in
+ * localStorage (read before first paint, no flash). Since 0.11 (backup format 5) they also travel in the
+ * backup: each one carries the time it was last chosen, and an import takes a setting only when the
+ * file's choice is newer than this device's (a fresh tablet takes them all, an old file never undoes
+ * a newer choice).
  */
 
 export type ThemePref = 'system' | 'day' | 'night';
@@ -44,9 +46,95 @@ function read(key: string): string | null {
 function write(key: string, value: string) {
   try {
     localStorage.setItem(key, value);
+    if (SYNCED[key]) stamp(key, Date.now());
   } catch {
     /* private mode or blocked storage: the choice simply lasts for this visit */
   }
+}
+
+// ---------- settings in the backup (format 5) ----------
+const KEY_STAMPS = 'upsc.settingsAt';
+/** Backup name → localStorage key, and a check of the value an import may write. */
+const SYNCED_KEYS: Record<string, { key: string; ok: (v: string) => boolean }> = {
+  theme: { key: 'upsc.theme', ok: (v) => ['system', 'day', 'night'].includes(v) },
+  font: { key: 'upsc.font', ok: (v) => FONT_STYLES.some((f) => f.id === v) },
+  width: { key: 'upsc.width', ok: (v) => v === 'full' || v === 'comfortable' },
+  outline: { key: 'upsc.outline', ok: (v) => v === 'shown' || v === 'hidden' },
+  celebrate: { key: 'upsc.celebrate', ok: (v) => v === 'on' || v === 'off' },
+  sketch: { key: 'upsc.sketch', ok: (v) => jsonObject(v) },
+  lastFolder: { key: 'upsc.lastFolder', ok: (v) => v.length > 0 && v.length < 200 },
+  drive: { key: 'upsc.drive', ok: (v) => jsonObject(v) }
+};
+const SYNCED: Record<string, string> = Object.fromEntries(Object.entries(SYNCED_KEYS).map(([name, s]) => [s.key, name]));
+
+function jsonObject(v: string): boolean {
+  try {
+    const o = JSON.parse(v);
+    return !!o && typeof o === 'object' && !Array.isArray(o);
+  } catch {
+    return false;
+  }
+}
+
+function stamps(): Record<string, number> {
+  try {
+    const o = JSON.parse(localStorage.getItem(KEY_STAMPS) ?? '{}');
+    return o && typeof o === 'object' ? o : {};
+  } catch {
+    return {};
+  }
+}
+
+function stamp(key: string, at: number) {
+  const name = SYNCED[key];
+  if (!name) return;
+  try {
+    localStorage.setItem(KEY_STAMPS, JSON.stringify({ ...stamps(), [name]: at }));
+  } catch {
+    /* blocked storage */
+  }
+}
+
+/** A setting saved by another module (last subject used, Drive schedule): stored and stamped like the rest. */
+export function writeSetting(key: string, value: string) {
+  write(key, value);
+}
+
+export type SettingsOut = Record<string, { value: string; at: number }>;
+
+/** Every setting chosen on this device, with when it was chosen (backup format 5). */
+export function collectSettings(): SettingsOut {
+  const at = stamps();
+  const out: SettingsOut = {};
+  for (const [name, { key }] of Object.entries(SYNCED_KEYS)) {
+    const value = read(key);
+    // Chosen before 0.11 (no time kept): 1, older than any real choice, newer than "never chosen".
+    if (value !== null) out[name] = { value, at: Number(at[name]) || 1 };
+  }
+  return out;
+}
+
+/** Takes each setting from a backup that is newer than this device's. Returns how many were taken. */
+export function applySettings(raw: unknown): number {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 0;
+  const here = stamps();
+  const hereAt = (name: string, key: string) => Number(here[name]) || (read(key) !== null ? 1 : 0);
+  let n = 0;
+  for (const [name, entry] of Object.entries(raw as Record<string, unknown>)) {
+    const spec = SYNCED_KEYS[name];
+    const e = entry as { value?: unknown; at?: unknown } | null;
+    if (!spec || !e || typeof e.value !== 'string' || typeof e.at !== 'number' || !Number.isFinite(e.at)) continue;
+    if (!spec.ok(e.value) || e.at <= hereAt(name, spec.key)) continue;
+    try {
+      localStorage.setItem(spec.key, e.value);
+      stamp(spec.key, e.at);
+      n++;
+    } catch {
+      /* blocked storage */
+    }
+  }
+  if (n) applyAppearance();
+  return n;
 }
 
 export function getTheme(): ThemePref {
