@@ -16,6 +16,8 @@ import { takeRedirectResult } from './lib/drive';
 import { startDriveSchedule } from './lib/drive-backup';
 import { resumeAfterRedirect } from './views/drive-ui';
 import { loadStyles } from './lib/my-styles';
+import { loadTemplates } from './lib/my-templates';
+import { loadLooks } from './lib/note-look';
 
 export interface View {
   route(parts: string[]): void;
@@ -210,6 +212,8 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
     .then(() => ensureFolders())
     .catch(() => 0)
     .then(() => loadStyles())
+    .catch(() => 0)
+    .then(() => Promise.all([loadTemplates(), loadLooks()]))
     .catch(() => 0)
     .finally(() => {
       void route();

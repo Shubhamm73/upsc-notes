@@ -24,6 +24,11 @@ the server to the NEW build, check the "new version" banner, tap Reload now, the
 - 0.13 (backup format 7; new nodes: chart, diagram, mindMap): the upgraded tablet's backup is format 7, the
   old build refuses a format-7 backup (a chart, a diagram and a mind map with a marked idea) and stores
   nothing, and a 0.13 note with them opens read-only in the old build, its stored doc untouched.
+- 0.14 (backup format 8: saved templates, look defaults; note.look; 7 more themes and Custom): an old theme
+  ("night") is still Night after the update, the upgrade writes no look, template or meta record, the new
+  build's backup is format 8 with the theme, the note's look, the template and the look default and a fresh
+  tablet takes all four, the old build refuses a format-8 backup and stores nothing, and a 0.14 note with a
+  look opens in the old build editable (no new nodes), and an edit made there keeps note.look byte-for-byte.
 
 Usage (port 4173 must be free; the script starts and stops the servers itself):
   git worktree add /tmp/prev <previous-release-commit> && cd /tmp/prev && ln -s <repo>/node_modules . && npm run build
@@ -169,6 +174,11 @@ def ver(v):
     return tuple(int(x) for x in v.split("."))
 
 
+def fmt_of(v):
+    """The backup format a build writes (0.11: 5 … 0.14: 8)."""
+    return {(0, 11): 5, (0, 12): 6, (0, 13): 7}.get(ver(v)[:2], 8)
+
+
 def key(rows):
     return sorted(rows, key=lambda r: r.get("id", r.get("key")))
 
@@ -303,6 +313,11 @@ try:
         if ver(new_v) >= (0, 11, 0):
             check(page.evaluate("localStorage.getItem('upsc.driveState')") is None and page.evaluate("document.documentElement.dataset.theme") == "night",
                   "0.11: Drive backup is off until he connects it; the night theme still applies")
+        if ver(new_v) >= (0, 14, 0):
+            bg = page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()")
+            check(page.evaluate("document.documentElement.dataset.theme") == "night" and bg == "#111519", f"0.14: his old theme \"night\" is still Night ({bg})")
+            check(not any("look" in n for n in new["notes"]) and not any(m.get("key") in ("templates", "looks") for m in new["meta"]),
+                  "0.14: the update writes no note look, template or look default")
         check(mine(new["notes"]).get("insights") == mine(before).get("insights"), "quick insights unchanged")
         if ver(new_v) >= (0, 8, 0):
             check(page.evaluate(DB_VERSION) == (40 if ver(new_v) >= (0, 10, 0) else 30), f"database upgraded to Dexie v{page.evaluate(DB_VERSION) // 10}")
@@ -408,7 +423,7 @@ try:
             check(len(ub["notes"]) == len(new["notes"]) and len(ub["vocab"]) == len(new["vocab"]) and len(ub["images"]) == len(new["images"]),
                   f"…and every note, word and picture ({len(ub['notes'])}, {len(ub['vocab'])}, {len(ub['images'])})")
             if ver(new_v) >= (0, 12, 0):
-                want = 7 if ver(new_v) >= (0, 13, 0) else 6
+                want = fmt_of(new_v)
                 check(ub["format"] == want and ub.get("styles") == [], f"0.12+: the upgraded tablet's backup is format {want} with no saved styles yet ({ub['format']}, {ub.get('styles')})")
         check(not errors, f"no page errors {errors}")
         ctx.close()
@@ -585,8 +600,8 @@ try:
             nb = json.loads(open(newer).read())
             styled = next(n for n in nb["notes"] if n["title"] == "Styled in the new build")
             kinds = [b["type"] for b in styled["sections"][0]["doc"]["content"]]
-            check(nb["format"] == 6 and [s["name"] for s in nb["styles"]] == ["Key box"] and "panel" in kinds and "table" in kinds,
-                  f"the new build's backup is format 6 with the saved style, the container and the table ({nb['format']}, {kinds})")
+            check(nb["format"] == fmt_of(new_v) and [s["name"] for s in nb["styles"]] == ["Key box"] and "panel" in kinds and "table" in kinds,
+                  f"the new build's backup is format {fmt_of(new_v)} with the saved style, the container and the table ({nb['format']}, {kinds})")
             fresh_browser.close()
             serve(OLD)
             back = p.chromium.launch()
@@ -648,8 +663,8 @@ try:
             nb = json.loads(open(newer).read())
             figs = next(n for n in nb["notes"] if n["title"] == "Figures in the new build")
             kinds = [b["type"] for b in figs["sections"][0]["doc"]["content"]]
-            check(nb["format"] == 7 and all(k in kinds for k in ("chart", "diagram", "mindMap")),
-                  f"the new build's backup is format 7 with the chart, the diagram and the mind map ({nb['format']}, {kinds})")
+            check(nb["format"] == fmt_of(new_v) and all(k in kinds for k in ("chart", "diagram", "mindMap")),
+                  f"the new build's backup is format {fmt_of(new_v)} with the chart, the diagram and the mind map ({nb['format']}, {kinds})")
             fresh_browser.close()
             serve(OLD)
             back = p.chromium.launch()
@@ -672,6 +687,96 @@ try:
             check("written by a newer version" in oldpage.inner_text(".section-body"), f"{old_v} says the section was written by a newer version")
             kept = next((n for n in oldpage.evaluate(ALL_NOTES) if n["id"] == figs["id"]), None)
             check(kept is not None and kept["updatedAt"] == figs["updatedAt"] and kept["sections"] == figs["sections"], f"{old_v} rewrites nothing in it (doc and updatedAt unchanged)")
+            back.close()
+        elif ver(new_v) >= (0, 14, 0) and ver(old_v) < (0, 14, 0):
+            # ---- 0.14+: a theme, a note look, a look default and a saved template, written by the new build ----
+            META_ROW = """(k) => new Promise(r => { const q = indexedDB.open('upsc-notes'); q.onsuccess = () => {
+                const g = q.result.transaction('meta').objectStore('meta').get(k); g.onsuccess = () => { q.result.close(); r(g.result ? g.result.value : null); }; }; })"""
+            fresh.goto(URL + "#/prefs")
+            fresh.click(".th-tile[data-theme-opt='sepia']")
+            fresh.wait_for_timeout(300)
+            fresh.goto(URL + "#/n/new/blank")
+            fresh.wait_for_selector("#f-title")
+            fresh.fill("#f-title", "Look in the new build")
+            fresh.locator(".section-body .rich").first.click()
+            fresh.keyboard.type("/heading")
+            fresh.wait_for_selector("#insert-menu:not([hidden])")
+            fresh.keyboard.press("Enter")
+            fresh.keyboard.type("Rights")
+            fresh.keyboard.press("Enter")
+            fresh.keyboard.type("Article 14")
+            expect(fresh.locator("#save-state")).to_have_attribute("data-state", "saved", timeout=5000)
+
+            def apply_look(cover, hset, accent, scope):
+                fresh.click("#note-more")
+                fresh.click(".popover button[aria-label='Note look']")
+                fresh.wait_for_selector("#look-sheet")
+                fresh.click(f"#look-cover [data-v='{cover}']")
+                fresh.click(f"#look-headings [data-set='{hset}']")
+                fresh.click(f"#look-accent [data-accent='{accent}']")
+                fresh.click(f"#look-scope [data-v='{scope}']")
+                fresh.click("#look-apply")
+                fresh.wait_for_timeout(400)
+            apply_look("accent", "underline", "gs1", "everywhere")
+            apply_look("subject", "pill", "gs4", "note")
+            expect(fresh.locator("#save-state")).to_have_attribute("data-state", "saved", timeout=5000)
+            fresh.click("#note-more")
+            fresh.click(".popover button[aria-label='Save as template']")
+            fresh.wait_for_selector("#tpl-save")
+            fresh.fill("#tpl-name", "Key sheet")
+            fresh.click("#tpl-save-go")
+            fresh.wait_for_timeout(400)
+            fresh.goto(URL + "#/settings")
+            with fresh.expect_download() as dl:
+                fresh.click("#backup-download")
+            newer = os.path.join(profile + "-files", "new-backup.json")
+            dl.value.save_as(newer)
+            nb = json.loads(open(newer).read())
+            looked = next(n for n in nb["notes"] if n["title"] == "Look in the new build")
+            nsv = {k: v["value"] for k, v in nb.get("settings", {}).items()}
+            want_look = {"cover": "subject", "headings": "pill", "accent": "gs4"}
+            check(nb["format"] == 8 and looked.get("look") == want_look and nsv.get("theme") == "sepia"
+                  and [t["name"] for t in nb.get("templates", [])] == ["Key sheet"] and ((nb.get("looks") or {}).get("everywhere") or {}).get("look", {}).get("headings") == "underline",
+                  f"the new build's backup is format 8 with the theme, the note's look, the template and the look default ({nb['format']}, {looked.get('look')}, {nsv.get('theme')}, {[t['name'] for t in nb.get('templates', [])]})")
+            # ... a fresh tablet on the new build takes all four
+            fresh3 = fresh_browser.new_page()
+            fresh3.goto(URL + "#/settings")
+            fresh3.wait_for_selector("#import-file", state="attached")
+            fresh3.set_input_files("#import-file", newer)
+            expect(fresh3.locator(".import-result")).to_contain_text("Imported:", timeout=60000)
+            res3 = fresh3.inner_text(".import-result")
+            got3 = next((n for n in fresh3.evaluate(ALL_NOTES) if n["id"] == looked["id"]), None)
+            check(got3 is not None and got3.get("look") == want_look and fresh3.evaluate(META_ROW, "templates") == nb["templates"] and fresh3.evaluate(META_ROW, "looks") == nb["looks"]
+                  and fresh3.evaluate("document.documentElement.dataset.theme") == "sepia" and "1 template" in res3,
+                  f"a fresh tablet takes the theme, the note's look, the template and the look default ({res3})")
+            fresh3.close()
+            fresh_browser.close()
+            serve(OLD)
+            back = p.chromium.launch()
+            oldpage = back.new_page()
+            oldpage.on("pageerror", lambda e: errors.append(str(e)))
+            oldpage.goto(URL + "#/settings")
+            oldpage.wait_for_selector("#import-file", state="attached")
+            oldpage.set_input_files("#import-file", newer)
+            oldpage.wait_for_timeout(2500)
+            check("newer version" in oldpage.inner_text("body"), f"{old_v} refuses a {new_v} backup (format 8: \"made by a newer version\")")
+            check(oldpage.evaluate(ALL_NOTES) == [] and (oldpage.evaluate(ALL, "vocab") or []) == [] and (oldpage.evaluate(ALL, "cards") or []) == []
+                  and not any(m.get("key") in ("styles", "templates", "looks") for m in (oldpage.evaluate(ALL, "meta") or [])), f"{old_v} stored nothing from it (no note, word, card, style, template or look)")
+            check(oldpage.evaluate("localStorage.getItem('upsc.theme')") is None, f"{old_v} took none of its settings")
+            # a 0.14 note that reached the old build anyway: it has no new nodes, so it opens editable, and an edit keeps its look
+            oldpage.evaluate("""(rec) => new Promise((res) => { const r = indexedDB.open('upsc-notes');
+                r.onsuccess = () => { const tx = r.result.transaction('notes', 'readwrite'); tx.objectStore('notes').put(rec); tx.oncomplete = () => { r.result.close(); res(true); }; }; })""", looked)
+            oldpage.goto(URL + "#/n/" + looked["id"])
+            oldpage.wait_for_selector(".section-body .ProseMirror")
+            oldpage.wait_for_timeout(1500)
+            check(oldpage.locator(".section-body .ProseMirror").first.get_attribute("contenteditable") == "true", f"{old_v} opens a 0.14 note with a look editable")
+            oldpage.locator(".section-body .ProseMirror > p").last.click()
+            oldpage.keyboard.press("End")
+            oldpage.keyboard.type(" edited in the old build")
+            expect(oldpage.locator("#save-state")).to_have_attribute("data-state", "saved", timeout=5000)
+            kept = next((n for n in oldpage.evaluate(ALL_NOTES) if n["id"] == looked["id"]), None)
+            check(kept is not None and "edited in the old build" in json.dumps(kept["sections"]) and kept["updatedAt"] > looked["updatedAt"], f"{old_v} saves the edit")
+            check(kept is not None and json.dumps(kept.get("look")) == json.dumps(looked["look"]), f"…and keeps note.look byte-for-byte ({kept and kept.get('look')})")
             back.close()
         else:
             fresh_browser.close()

@@ -5,6 +5,8 @@ import { syncNoteCards } from './review';
 import { applySettings, collectSettings, type SettingsOut } from './prefs';
 import { bigChange } from './changes';
 import { allStyles, mergeStyles, type SavedStyle } from './my-styles';
+import { allSavedTemplates, mergeTemplates, type SavedTemplate } from './my-templates';
+import { allLooks, mergeLooks, type LooksMeta } from './note-look';
 
 const APP = 'upsc-notes';
 /**
@@ -12,12 +14,14 @@ const APP = 'upsc-notes';
  * 3 = 0.9 (notes may hold sketch blocks); 4 = 0.10 (adds folders; notes and words may name their folder);
  * 5 = 0.11 (adds settings: theme, font, width, outline, streak moments, sketch tools, last subject, Drive schedule);
  * 6 = 0.12 (adds his saved heading and container styles; notes may hold containers and styled tables / headings);
- * 7 = 0.13+ (notes may hold the new charts, diagrams and mind maps).
+ * 7 = 0.13 (notes may hold the new charts, diagrams and mind maps);
+ * 8 = 0.14+ (adds his own templates and the subject / every-note looks; notes may carry a look; new themes).
  * An older app refuses a newer format instead of opening sections it can't show as blank pages
  * (format 3), dropping the folders (format 4), the settings (format 5) or the saved styles (format 6),
- * or importing notes whose charts, diagrams and mind maps it can only show read-only (format 7).
+ * importing notes whose charts, diagrams and mind maps it can only show read-only (format 7), or dropping
+ * his templates and looks (format 8).
  */
-export const FORMAT = 7;
+export const FORMAT = 8;
 
 interface ImageOut extends Omit<ImageRec, 'blob'> {
   type: string;
@@ -42,6 +46,10 @@ export interface BackupFile {
   settings?: SettingsOut;
   /** Format 6+. Saved heading and container styles, deleted ones as small records; absent in older backups. */
   styles?: SavedStyle[];
+  /** Format 8+. His own templates, deleted ones as small records; absent in older backups. */
+  templates?: SavedTemplate[];
+  /** Format 8+. Looks for a subject or every note ({ everywhere?, subjects }); absent in older backups. */
+  looks?: LooksMeta;
 }
 
 export interface ImportReport {
@@ -55,6 +63,8 @@ export interface ImportReport {
   settings: number;
   /** Saved styles taken from the file (new here, or newer in the file). */
   styles: number;
+  /** His templates taken from the file (new here, or newer in the file). */
+  templates: number;
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -96,7 +106,9 @@ export async function buildBackup(): Promise<{ blob: Blob; filename: string; cou
     folders,
     meta: { reviewDays },
     settings: collectSettings(),
-    styles: allStyles()
+    styles: allStyles(),
+    templates: allSavedTemplates(),
+    looks: allLooks()
   };
   const blob = new Blob([JSON.stringify(file)], { type: 'application/json' });
   return { blob, filename: `upsc-notes-backup-${ymd()}.json`, counts, exportedAt: file.exportedAt };
@@ -126,7 +138,11 @@ function validate(raw: unknown): BackupFile {
     (f.format >= 4 && !Array.isArray(f.folders)) ||
     (f.settings !== undefined && (!f.settings || typeof f.settings !== 'object' || Array.isArray(f.settings))) ||
     (f.styles !== undefined && !Array.isArray(f.styles)) ||
-    (f.format >= 6 && !Array.isArray(f.styles))
+    (f.format >= 6 && !Array.isArray(f.styles)) ||
+    (f.templates !== undefined && !Array.isArray(f.templates)) ||
+    (f.format >= 8 && !Array.isArray(f.templates)) ||
+    (f.looks !== undefined && (!f.looks || typeof f.looks !== 'object' || Array.isArray(f.looks))) ||
+    (f.format >= 8 && !f.looks)
   ) {
     throw new BackupError('This backup file is incomplete or damaged. Try an older backup file.');
   }
@@ -193,7 +209,7 @@ export async function importBackupText(text: string): Promise<ImportReport> {
   }
   const data = validate(parsed);
   for (const n of data.notes) if (RENAMED_SUBJECTS[n.subject]) n.subject = RENAMED_SUBJECTS[n.subject];
-  const report: ImportReport = { added: 0, updated: 0, keptNewer: 0, images: 0, cards: 0, folders: 0, settings: 0, styles: 0 };
+  const report: ImportReport = { added: 0, updated: 0, keptNewer: 0, images: 0, cards: 0, folders: 0, settings: 0, styles: 0, templates: 0 };
   /** Notes written by this import: their cards are brought in step with their quick insights afterwards. */
   const written: Note[] = [];
 
@@ -255,6 +271,9 @@ export async function importBackupText(text: string): Promise<ImportReport> {
   report.settings = applySettings(data.settings);
   // Saved styles live in meta, merged by id like notes (a damaged one is skipped, never half-made).
   report.styles = await mergeStyles(data.styles);
+  // His templates and the subject / every-note looks too (0.14); a look default isn't counted, like a setting.
+  report.templates = await mergeTemplates(data.templates);
+  await mergeLooks(data.looks);
   if (report.added || report.updated) bigChange('import');
   return report;
 }

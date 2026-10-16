@@ -30,7 +30,7 @@ function diagramView({ node, getPos, editor }: { node: PMNode; getPos: (() => nu
 
   const draw = (force = false) => {
     const d = data();
-    const key = JSON.stringify([d, document.documentElement.dataset.theme ?? '', getComputedStyle(fig).getPropertyValue('--subj')]);
+    const key = JSON.stringify([d, document.documentElement.dataset.ink ?? '', getComputedStyle(fig).getPropertyValue('--subj')]);
     if (!force && key === drawn) return;
     drawn = key;
     fig.dataset.kind = d.kind;

@@ -41,6 +41,8 @@ export interface Note {
   template?: string;
   /** Optional font style for this note only (see FONT_STYLES); absent = the app's style. */
   fontStyle?: string;
+  /** 0.14 Note look: { cover, headings, accent } (lib/note-look.ts). Absent: the subject's or every-note default. Unindexed. */
+  look?: unknown;
   /** Subject folder (0.10). Absent on older notes: they show under their subject's General (lib/folder-plan.ts). */
   folderId?: string;
   nextReview: string; // YYYY-MM-DD, local date

@@ -16,7 +16,7 @@ import { SketchBlock } from './sketch-block';
 import { Callout } from './callout';
 import { pasteExtension, type PasteHooks } from './paste';
 import { PictureFlow } from './flow';
-import { LookHeading } from './heading-look';
+import { HeadingSetExt, LookHeading } from './heading-look';
 import { Panel, PanelColumn } from './panel';
 import { StyledTable, TableFigures } from './table';
 
@@ -170,6 +170,7 @@ export function createEditor(opts: {
       }),
       PanelDoc,
       LookHeading.configure({ levels: [2, 3, 4] }),
+      HeadingSetExt,
       StyledBulletList,
       Highlight,
       TableKit.configure({ table: false }),

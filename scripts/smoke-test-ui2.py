@@ -138,7 +138,7 @@ with sync_playwright() as p:
     page.click("#new-note")
     page.wait_for_selector(".tpl-card")
     names = page.eval_on_selector_all(".tpl-card strong", "e => e.map(x => x.textContent)")
-    check(names == ["GS answer", "Topic sheet", "Current affairs", "Blank"], f"four templates offered ({names})")
+    check(len(names) == 19 and all(n in names for n in ["GS answer", "Topic sheet", "Current affairs", "Blank"]), f"19 templates offered, the first four among them ({names})")
     page.click(".tpl-card[data-template='topic-sheet']")
     page.wait_for_selector("#f-title")
     heads = page.eval_on_selector_all(".section-heading", "e => e.map(x => x.value)")

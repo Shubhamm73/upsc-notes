@@ -27,7 +27,7 @@ function mindMapView({ node, getPos, editor }: { node: PMNode; getPos: (() => nu
 
   const draw = (force = false) => {
     const m = readMindMap(current.attrs);
-    const key = JSON.stringify([m, document.documentElement.dataset.theme ?? '', getComputedStyle(fig).getPropertyValue('--subj')]);
+    const key = JSON.stringify([m, document.documentElement.dataset.ink ?? '', getComputedStyle(fig).getPropertyValue('--subj')]);
     if (!force && key === drawn) return;
     drawn = key;
     const t = new Tree(m);

@@ -13,6 +13,7 @@ import { isPlain, normRotate, readCrop, shapeOf, tracePath } from '../lib/shapes
 import { readHeight, readStrokes, sketchToPng } from '../lib/sketch';
 import { figureColumns, printColour, panelTitle, readFill, readHeadingLook, readPanelLook, tableStyle, type Fill, type HeadingLook } from '../lib/looks';
 import { PATHS } from '../lib/icons';
+import { loadLooks, resolveLook, SET_LOOKS, type HeadingSet, type NoteLook } from '../lib/note-look';
 
 /** A4 in points, with 48 pt margins. */
 const PAGE_W = 595.28;
@@ -227,6 +228,8 @@ interface Ctx {
   subjName: string;
   /** Numbered headings, counted across the note. */
   hnum: { n: number };
+  /** The note's heading style set (0.14 Note look): what plain headings and section titles look like. */
+  hset?: HeadingSet;
 }
 
 const NOTE_CTX = { subj: ACCENT, subjName: 'Notes', hnum: { n: 0 } };
@@ -352,7 +355,7 @@ function block(n: DocNode, ctx: Ctx): Content | null {
       return { text: n.content?.length ? inlines(n.content) : ' ', margin: [0, 0, 0, 6] };
     case 'heading': {
       const level = Number(n.attrs?.level ?? 2);
-      const look = readHeadingLook(n.attrs?.look);
+      const look = readHeadingLook(n.attrs?.look) ?? setLook(level, ctx);
       return look ? styledHeading(n, level, look, ctx) : { text: inlines(n.content), style: `h${level}` };
     }
     case 'panel':
@@ -524,7 +527,7 @@ function table(n: DocNode, ctx: Ctx): Content {
   return caption ? { stack: [{ text: caption, bold: true, margin: [0, 0, 0, 4] }, grid], margin: [0, 4, 0, 10] } : grid;
 }
 
-const HEAD_SIZE: Record<number, number> = { 2: 13, 3: 12, 4: 11 };
+const HEAD_SIZE: Record<number, number> = { 1: 13.5, 2: 13, 3: 12, 4: 11 }; // 1: a section title under a heading set (0.14)
 const TINT: Record<Fill, number> = { soft: 14, medium: 28, solid: 40 };
 
 /** A heading with a look, as on screen in print colours (square corners, no tilt or shadow). */
@@ -535,7 +538,7 @@ function styledHeading(n: DocNode, level: number, look: HeadingLook, ctx: Ctx): 
   const t = TINT[look.fill];
   const full = look.width === 'full';
   const align = look.align === 'center' ? 'center' : 'left';
-  const margin = level === 2 ? [0, 8, 0, 4] : [0, 6, 0, 3];
+  const margin = level === 1 ? [0, 10, 0, 6] : level === 2 ? [0, 8, 0, 4] : [0, 6, 0, 3];
   const words = inlines(n.content);
   let before: Content[] = [];
   let after: Content[] = [];
@@ -636,13 +639,37 @@ function noteMeta(n: Note): Content {
   return { text: [fidx.label(n), n.topic].filter(Boolean).join(' · '), color: MUTED, margin: [0, 0, 0, 12] };
 }
 
+/** A note's look (0.14): its own, else its subject's or the every-note default. */
+function lookOf(n: Note): NoteLook {
+  const { main, sub } = fidx.placeOf(n);
+  return resolveLook(n, [sub?.id ?? fidx.noteFolder(n), main?.id]).look;
+}
+
+/** Plain headings under a heading set: h2 gets the set's main look, h3 and h4 the second one. */
+function setLook(level: number, ctx: Ctx): HeadingLook | null {
+  const l = ctx.hset ? SET_LOOKS[ctx.hset] : null;
+  return l ? (level === 2 ? l.h2 : l.h3) : null;
+}
+
+/** The note's cover band, in print colours (a single note's PDF). */
+function coverBand(n: Note): Content[] {
+  const look = lookOf(n);
+  if (look.cover === 'none') return [];
+  const colour = look.cover === 'subject' ? printColour(fidx.placeOf(n).main?.colour) : look.accent ? printColour(look.accent) : ACCENT;
+  return [{ canvas: [{ type: 'rect', x: 0, y: 0, w: CONTENT_W, h: 30, r: 6, color: colour }], margin: [0, 0, 0, 14] }];
+}
+
 function sectionContent(n: Note, sectionIds: string[] | null, base: Ctx, tocDepth: boolean): Content[] {
   const out: Content[] = [];
   const main = fidx.placeOf(n).main;
-  const ctx: Ctx = { ...base, subj: printColour(main?.colour), subjName: main?.name ?? 'Notes', hnum: { n: 0 } };
+  const look = lookOf(n);
+  const ctx: Ctx = { ...base, subj: look.accent ? printColour(look.accent) : printColour(main?.colour), subjName: main?.name ?? 'Notes', hnum: { n: 0 }, hset: look.headings };
+  const secLook = look.headings === 'classic' ? null : SET_LOOKS[look.headings]!.h2;
+  const snum = { n: 0 };
   for (const s of n.sections) {
     if (sectionIds && !sectionIds.includes(s.id)) continue;
-    if (s.heading.trim()) out.push({ text: s.heading, style: 'section', tocItem: tocDepth ? 'toc' : undefined, tocMargin: [24, 0, 0, 0] });
+    if (s.heading.trim() && secLook) out.push(styledHeading({ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: s.heading }] }, 1, secLook, { ...ctx, hnum: snum }));
+    else if (s.heading.trim()) out.push({ text: s.heading, style: 'section', tocItem: tocDepth ? 'toc' : undefined, tocMargin: [24, 0, 0, 0] });
     out.push(...blocks(s.doc.content, ctx));
   }
   return out;
@@ -710,6 +737,7 @@ export async function buildPdf(scope: PdfScope): Promise<{ blob: Blob; filename:
   let filename = `upsc-notes-${ymd()}.pdf`;
   let content: Content[] = [];
   fidx = new FolderIndex(await db.folders.toArray());
+  await loadLooks();
 
   if (scope.kind === 'section' || scope.kind === 'note') {
     const n = scope.note;
@@ -718,6 +746,7 @@ export async function buildPdf(scope: PdfScope): Promise<{ blob: Blob; filename:
     const ctx: Ctx = { images: await loadImages(docs), sketches: new Map(), width: CONTENT_W, ...NOTE_CTX };
     header = n.title || 'Untitled note';
     content = [
+      ...coverBand(n),
       { text: n.title || 'Untitled note', style: 'title' },
       noteMeta(n),
       ...(scope.kind === 'note' ? insightsBlock(n) : []),

@@ -3,6 +3,9 @@ import type { Editor } from '@tiptap/core';
 import { db, newId, type DocNode, type Folder, type Note, type Section, type Vocab } from '../db';
 import { docToText, noteSearchText, textToDoc, wordCount } from '../lib/doc';
 import { createEditor } from '../editor/editor';
+import { setHeadingSet } from '../editor/heading-look';
+import { COLOURS } from '../lib/looks';
+import { allLooks, COVERS, defaultFor, HEADING_SET_INFO, HEADING_SETS, readLook, resolveLook, setLookDefault, type HeadingSet, type NoteLook } from '../lib/note-look';
 import { createCanvasTools, reducedMotion } from '../editor/tools';
 import { removeUnusedImages } from '../editor/images';
 import { runPdfExport } from '../pdf/run';
@@ -16,7 +19,8 @@ import { openSheet } from '../lib/sheet';
 import { ago, crumbs, field, folderGrid, plural, type CardSpec } from './folder-ui';
 import { celebrationsOn, FONT_STYLES, getPageWidth, outlineShown, setOutlineShown, setPageWidth } from '../lib/prefs';
 import { NoteHistory } from '../editor/history';
-import { TEMPLATES, templateOf } from '../lib/templates';
+import { allTemplates, isTemplateId, sectionDoc, TEMPLATE_GROUPS, templateOf, type NoteTemplate } from '../lib/templates';
+import { deleteTemplate, liveSavedTemplates, nextTemplateName, renameTemplate, saveTemplate } from '../lib/my-templates';
 import { closePopover, openPopover, type MenuItem } from '../lib/menu';
 import { prettyDate, ymd } from '../lib/dates';
 import { h } from '../lib/h';
@@ -39,6 +43,27 @@ const SUGGESTIONS: Record<string, string[]> = {
   'main:PSIR': ['Political theory', 'Indian politics', 'Comparative politics', 'International relations']
 };
 
+/** A small picture of a template: a bar per section, and a mark for what it starts with. */
+function tplThumb(t: NoteTemplate): HTMLElement {
+  const kind = (sec: NoteTemplate['sections'][number]): string | null => {
+    const first = sec.make?.().content?.find((n) => n.type !== 'paragraph');
+    if (!first) return null;
+    if (first.type === 'table') return 'table';
+    if (first.type === 'callout') return 'callout';
+    if (first.type === 'panel') return first.attrs?.kind === 'columns' ? 'columns' : 'panel';
+    if (first.type.endsWith('List')) return 'list';
+    return 'figure';
+  };
+  return h(
+    'span',
+    { class: 'tpl-thumb', 'aria-hidden': 'true' },
+    ...t.sections.slice(0, 6).map((sec) => {
+      const k = kind(sec);
+      return h('span', { class: 'tt-sec' }, h('i', {}), k ? h('b', { 'data-k': k }) : h('u', {}));
+    })
+  );
+}
+
 function blankNote(place: { folderId?: string; subject: string }, templateId: string): Note {
   const now = Date.now();
   const t = templateOf(templateId);
@@ -47,7 +72,7 @@ function blankNote(place: { folderId?: string; subject: string }, templateId: st
     ...place,
     topic: '',
     title: '',
-    sections: t.sections.map((heading) => ({ id: newId(), heading, doc: textToDoc('') })),
+    sections: t.sections.map((sec) => ({ id: newId(), heading: sec.heading, doc: sectionDoc(sec) })),
     explain: '',
     connect: '',
     nextReview: ymd(),
@@ -332,7 +357,8 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       }
       const list = notesIn(new Set([folder.id])).sort((a, b) => b.updatedAt - a.updatedAt);
       const start = h('div', { class: 'tpl-row' }, h('span', { class: 'meta' }, 'Start from:'));
-      for (const t of TEMPLATES) start.append(h('a', { class: 'chip-link', href: `#/n/new/${t.id}`, 'data-template': t.id }, t.name));
+      for (const id of ['gs-answer', 'topic-sheet', 'current-affairs', 'blank']) start.append(h('a', { class: 'chip-link', href: `#/n/new/${id}`, 'data-template': id }, templateOf(id).name));
+      start.append(h('a', { class: 'tpl-more', href: '#/n/new', id: 'all-templates' }, 'All templates'));
       parts.push(start);
       for (const n of list) listEl.append(noteCard(n, today));
       if (!list.length) listEl.append(h('li', { class: 'empty-row' }, `No notes in ${folder.name} yet. Tap New note, or pick a template above.`));
@@ -605,20 +631,101 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   function renderTemplatePicker() {
     draft = null;
     destroyEditors();
-    const cards = TEMPLATES.map((t) => {
+    const pick = (t: NoteTemplate) => {
+      history.replaceState(null, '', `#/n/new/${t.id}`);
+      startNew(t.id);
+    };
+    const card = (t: NoteTemplate) => {
       const b = h(
         'button',
-        { type: 'button', class: 'tpl-card', 'data-template': t.id },
+        { type: 'button', class: 'tpl-card', 'data-template': t.id, 'data-group': t.group },
+        tplThumb(t),
         h('strong', {}, t.name),
         h('span', { class: 'tpl-hint' }, t.hint),
-        h('span', { class: 'tpl-sections' }, t.sections.join(' · '))
+        h('span', { class: 'tpl-sections' }, t.sections.map((x) => x.heading).join(' · ')),
+        t.blocks?.length ? h('span', { class: 'tpl-blocks' }, `Comes with: ${t.blocks.join(', ')}`) : null
       );
-      b.addEventListener('click', () => {
-        history.replaceState(null, '', `#/n/new/${t.id}`);
-        startNew(t.id);
-      });
+      b.addEventListener('click', () => pick(t));
       return b;
-    });
+    };
+    const mineHost = h('section', { class: 'tpl-group', id: 'my-templates' });
+    const paintMine = () => {
+      const mine = liveSavedTemplates();
+      mineHost.hidden = !mine.length;
+      mineHost.replaceChildren(
+        h('h2', {}, 'My templates'),
+        h(
+          'div',
+          { class: 'tpl-grid' },
+          ...mine.map((x) => {
+            const t = templateOf(x.id);
+            const menu = h('button', { type: 'button', class: 'tpl-menu icon-btn', 'aria-label': `Options for ${x.name}`, 'data-template-menu': x.id }, icon('more', 18));
+            menu.addEventListener('click', (e) => {
+              e.stopPropagation();
+              openPopover(
+                menu,
+                [
+                  {
+                    label: 'Rename',
+                    run: () => {
+                      const input = h('input', { id: 'tpl-name', 'aria-label': 'Template name', value: x.name, maxlength: 60 });
+                      openSheet({
+                        title: 'Rename template',
+                        id: 'tpl-rename',
+                        body: [input],
+                        actions: [
+                          { label: 'Cancel' },
+                          {
+                            label: 'Rename',
+                            primary: true,
+                            run: async () => {
+                              await renameTemplate(x.id, input.value);
+                              paintMine();
+                            }
+                          }
+                        ]
+                      });
+                      requestAnimationFrame(() => input.select());
+                    }
+                  },
+                  {
+                    label: 'Delete',
+                    danger: true,
+                    run: () =>
+                      openSheet({
+                        title: `Delete “${x.name}”?`,
+                        id: 'tpl-delete',
+                        body: [h('p', {}, 'Notes made from it stay as they are. Only the template goes.')],
+                        actions: [
+                          { label: 'Keep it' },
+                          {
+                            label: 'Delete template',
+                            danger: true,
+                            run: async () => {
+                              await deleteTemplate(x.id);
+                              paintMine();
+                              ctx.toast(`Deleted template “${x.name}”.`);
+                            }
+                          }
+                        ]
+                      })
+                  }
+                ],
+                'Template options'
+              );
+            });
+            return h('div', { class: 'tpl-mine' }, card(t), menu);
+          })
+        )
+      );
+    };
+    paintMine();
+    const saveTile = h(
+      'div',
+      { class: 'tpl-save-hint', id: 'tpl-save-hint' },
+      h('strong', {}, 'Save this note as a template'),
+      h('span', { class: 'meta' }, 'Open a note you like, then ⋯ → Save as template. Its sections, headings, containers and tables come back here, emptied.')
+    );
     editorEl.replaceChildren(
       h(
         'div',
@@ -627,10 +734,12 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         h('h1', {}, 'New note'),
         h('p', { class: 'meta' }, 'Pick a shape for this note. You can change it later from the chip under the title.'),
         h('p', { class: 'meta', id: 'new-place' }, `It goes in ${placeLabel(homeFor(index))}. Move it any time from the chip under the title.`),
-        h('div', { class: 'tpl-grid' }, ...cards)
+        ...TEMPLATE_GROUPS.map((g) => h('section', { class: 'tpl-group', 'data-group': g }, h('h2', {}, g), h('div', { class: 'tpl-grid' }, ...allTemplates().filter((t) => t.group === g).map(card)))),
+        mineHost,
+        saveTile
       )
     );
-    cards[0].focus({ preventScroll: true });
+    editorEl.querySelector<HTMLElement>('.tpl-card')?.focus({ preventScroll: true });
   }
 
   function startNew(templateId: string) {
@@ -720,7 +829,10 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     const template = h(
       'select',
       { id: 'f-template', class: 'chip-select', 'aria-label': 'Template' },
-      ...TEMPLATES.map((t) => h('option', { value: t.id }, t.name))
+      ...[...TEMPLATE_GROUPS, 'My templates' as const].map((g) => {
+        const list = allTemplates().filter((t) => t.group === g);
+        return list.length ? h('optgroup', { label: g }, ...list.map((t) => h('option', { value: t.id }, t.name))) : null;
+      })
     );
     template.value = templateOf(d.template).id;
     const reviewInfo = h('p', { class: 'review-info' });
@@ -742,8 +854,30 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       subject.setAttribute('aria-label', `Subject: ${index.label(d)}. Move to…`);
       backLink.href = sub ? folderHref(sub.id) : '#/notes';
       backText.textContent = sub ? index.label(d) : 'Notes';
+      paintLook();
       // charts, diagrams and mind maps that follow the subject colour redraw (0.13)
       window.dispatchEvent(new Event('subjectchange'));
+    };
+    // note look (0.14): cover, heading set, accent and font; own look, else the subject's or everywhere default
+    const cover = h('div', { class: 'note-cover', id: 'note-cover', 'aria-hidden': 'true', hidden: true });
+    let curSet: HeadingSet = 'classic';
+    const lookFolders = () => {
+      const { sub, main } = index.placeOf(d);
+      return [sub?.id ?? index.noteFolder(d), main?.id];
+    };
+    const paintLook = (preview?: { look: NoteLook; font: string | null }) => {
+      const { look, font } = preview ?? resolveLook(d, lookFolders());
+      const subj = index.noteColour(d);
+      canvasEl.style.setProperty('--subj', look.accent ? `var(--sub-${look.accent})` : subj);
+      if (look.headings === 'classic') delete canvasEl.dataset.hset;
+      else canvasEl.dataset.hset = look.headings;
+      cover.hidden = look.cover === 'none';
+      cover.dataset.cover = look.cover;
+      cover.style.setProperty('--cover', look.cover === 'subject' ? subj : look.accent ? `var(--sub-${look.accent})` : 'var(--accent)');
+      curSet = look.headings;
+      for (const ed of editors.values()) setHeadingSet(ed, curSet);
+      for (const f of FONT_STYLES) canvasEl.classList.remove(`font-${f.id}`);
+      if (font) canvasEl.classList.add(`font-${font}`);
     };
 
     // quick insights
@@ -823,7 +957,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       'div',
       { class: 'canvas editor' },
       header,
-      h('div', { class: 'canvas-body' }, h('article', { class: 'canvas-col' }, title, chips, insightsHost, sectionsHost, details), outline),
+      h('div', { class: 'canvas-body' }, h('article', { class: 'canvas-col' }, cover, title, chips, insightsHost, sectionsHost, details), outline),
       focusExit
     );
     editorEl.replaceChildren(canvasEl);
@@ -875,7 +1009,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         }
         const words = wordCount(d);
         wordsEl.textContent = plural(words, 'word');
-        meter.hidden = d.template !== 'gs-answer';
+        meter.hidden = !templateOf(d.template).meter;
         if (!meter.hidden) {
           meterNum.textContent = `${words} / 250`;
           meterFill.style.transform = `scaleX(${Math.min(words, METER_MAX) / METER_MAX})`;
@@ -1060,6 +1194,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         parked.delete(s.id);
         views.set(s.id, v);
         editors.set(s.id, v.editor);
+        setHeadingSet(v.editor, curSet);
         const isC = collapsed.has(s.id);
         v.heading.setAttribute('aria-label', `Section ${i + 1} heading`);
         v.collapseBtn.setAttribute('aria-label', `${isC ? 'Expand' : 'Collapse'} section ${i + 1}`);
@@ -1261,12 +1396,13 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       if (t.id !== 'blank') {
         const only = d.sections.length === 1 ? d.sections[0] : null;
         if (only && isEmptyDoc(only.doc) && ['', 'notes'].includes(only.heading.trim().toLowerCase())) {
-          d.sections = t.sections.map((heading) => ({ id: newId(), heading, doc: textToDoc('') }));
-          added = t.sections;
+          d.sections = t.sections.map((sec) => ({ id: newId(), heading: sec.heading, doc: sectionDoc(sec) }));
+          added = t.sections.map((sec) => sec.heading);
         } else {
           const have = new Set(d.sections.map((s) => s.heading.trim().toLowerCase()));
-          added = t.sections.filter((x) => !have.has(x.toLowerCase()));
-          for (const heading of added) d.sections.push({ id: newId(), heading, doc: textToDoc('') });
+          const fresh = t.sections.filter((sec) => !have.has(sec.heading.trim().toLowerCase()));
+          added = fresh.map((sec) => sec.heading);
+          for (const sec of fresh) d.sections.push({ id: newId(), heading: sec.heading, doc: sectionDoc(sec) });
         }
       }
       schedule();
@@ -1309,10 +1445,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       setNoteFont(styleSelect.value);
       noteHist.field('font', before, d.fontStyle ?? '', setNoteFont);
     });
-    const applyNoteFont = () => {
-      for (const f of FONT_STYLES) canvasEl.classList.remove(`font-${f.id}`);
-      if (d.fontStyle) canvasEl.classList.add(`font-${d.fontStyle}`);
-    };
+    const applyNoteFont = () => paintLook();
     notePdf.addEventListener('click', () => void runPdfExport({ kind: 'note', note: structuredClone(d) }, ctx, notePdf));
     const toTrash = async () => {
       d.deletedAt = Date.now();
@@ -1342,12 +1475,177 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
           },
           ...(window.matchMedia('(min-width: 1000px)').matches ? [{ label: outlineShown() ? 'Hide outline' : 'Show outline', aria: 'Outline', run: toggleOutline }] : []),
           { label: 'Own words and connections', run: () => openDetails(explain) },
+          { label: 'Note look', aria: 'Note look', run: openLookSheet },
+          { label: 'Save as template', aria: 'Save as template', run: () => void saveAsTemplate() },
           { label: 'Font style for this note', run: () => openDetails(styleSelect) },
           { label: 'Move to trash', danger: true, run: () => void toTrash() }
         ],
         'Note actions'
       )
     );
+
+    // ----- save as template (0.14) -----
+    async function saveAsTemplate() {
+      const input = h('input', { id: 'tpl-name', 'aria-label': 'Template name', value: nextTemplateName(d.title), maxlength: 60 });
+      openSheet({
+        title: 'Save as template',
+        id: 'tpl-save',
+        body: [
+          h('p', { class: 'meta' }, 'Keeps the sections, headings and their looks, containers and callouts, and tables with their header row. Your writing, lists, pictures, sketches and figures stay out.'),
+          h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Name'), input)
+        ],
+        actions: [
+          { label: 'Cancel' },
+          {
+            label: 'Save template',
+            id: 'tpl-save-go',
+            primary: true,
+            run: async () => {
+              const x = await saveTemplate(input.value, d.sections.map((sec) => ({ heading: sec.heading, doc: sec.doc })), !!templateOf(d.template).meter);
+              ctx.toast(`Saved “${x.name}”. Find it under My templates on New note.`);
+            }
+          }
+        ]
+      });
+      requestAnimationFrame(() => input.select());
+    }
+
+    // ----- note look sheet (0.14) -----
+    const setOwnLook = (st: { look: NoteLook | null; font: string | null }) => {
+      if (st.look) d.look = { ...st.look };
+      else delete d.look;
+      if (st.font) d.fontStyle = st.font;
+      else delete d.fontStyle;
+      styleSelect.value = d.fontStyle ?? '';
+      paintLook();
+      schedule();
+    };
+    function openLookSheet() {
+      const folders = lookFolders();
+      const own = readLook(d.look);
+      const start = resolveLook(d, folders);
+      const p: { look: NoteLook; font: string | null } = { look: { ...start.look }, font: start.font };
+      let scope: 'note' | 'subject' | 'everywhere' = 'note';
+      let done = false;
+      const seg = <T extends string>(id: string, label: string, opts: { id: T; name: string }[], cur: () => T, set: (v: T) => void) => {
+        const box = h('div', { class: 'seg', role: 'radiogroup', 'aria-label': label, id });
+        const paint = () =>
+          box.replaceChildren(
+            ...opts.map((o) => {
+              const b = h('button', { type: 'button', role: 'radio', 'aria-checked': String(cur() === o.id), 'data-v': o.id }, o.name);
+              b.addEventListener('click', () => {
+                set(o.id);
+                paint();
+                paintLook(p);
+              });
+              return b;
+            })
+          );
+        paint();
+        return box;
+      };
+      const sets = h('div', { class: 'hset-grid', role: 'radiogroup', 'aria-label': 'Heading style', id: 'look-headings' });
+      const paintSets = () =>
+        sets.replaceChildren(
+          ...HEADING_SETS.map((id) => {
+            const b = h(
+              'button',
+              { type: 'button', role: 'radio', class: 'hset-tile', 'aria-checked': String(p.look.headings === id), 'data-set': id },
+              h('span', { class: 'hset-demo', 'data-hset': id, 'aria-hidden': 'true' }, h('span', { class: 'hd' }, 'Heading')),
+              h('strong', {}, HEADING_SET_INFO[id].name),
+              h('span', { class: 'meta' }, HEADING_SET_INFO[id].hint)
+            );
+            b.addEventListener('click', () => {
+              p.look.headings = id;
+              paintSets();
+              paintLook(p);
+            });
+            return b;
+          })
+        );
+      paintSets();
+      const font = h('select', { id: 'look-font', 'aria-label': 'Font' }, h('option', { value: '' }, 'App font'), ...FONT_STYLES.map((f) => h('option', { value: f.id }, f.name)));
+      font.value = p.font ?? '';
+      font.addEventListener('change', () => {
+        p.font = font.value || null;
+        paintLook(p);
+      });
+      const accents = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Accent colour', id: 'look-accent' });
+      const paintAccents = () =>
+        accents.replaceChildren(
+          ...[null, ...COLOURS.map((c) => c.key)].map((k) => {
+            const name = k ? COLOURS.find((c) => c.key === k)!.name : 'Subject colour';
+            const b = h('button', { type: 'button', role: 'radio', class: k ? 'sw' : 'sw sw-default', 'aria-checked': String(p.look.accent === k), 'aria-label': name, title: name, 'data-accent': k ?? '', style: `--c:${k ? `var(--sub-${k})` : index.noteColour(d)}` });
+            b.addEventListener('click', () => {
+              p.look.accent = k;
+              paintAccents();
+              paintLook(p);
+            });
+            return b;
+          })
+        );
+      paintAccents();
+      const { sub } = index.placeOf(d);
+      const scopeSeg = seg('look-scope', 'Apply to', [
+        { id: 'note' as const, name: 'This note' },
+        { id: 'subject' as const, name: sub ? `All of ${sub.name}` : 'This subject' },
+        { id: 'everywhere' as const, name: 'Every note' }
+      ], () => scope, (v) => (scope = v));
+      const def = defaultFor(folders);
+      const apply = () => {
+        done = true;
+        const was = { look: readLook(d.look), font: d.fontStyle ?? null };
+        const next = { look: { ...p.look }, font: p.font };
+        if (scope === 'note') {
+          setOwnLook(next);
+          noteHist.op(() => setOwnLook(was), () => setOwnLook(next));
+          ctx.toast('Look set for this note.');
+          return;
+        }
+        const key = scope === 'everywhere' ? '*' : folders[0];
+        if (!key) return;
+        const meta = allLooks();
+        const prevRec = scope === 'everywhere' ? meta.everywhere : meta.subjects[key];
+        const prev = prevRec && !prevRec.deleted ? { look: prevRec.look, font: prevRec.font } : null;
+        const put = async (rec: typeof prev, own: typeof was) => {
+          await setLookDefault(key, rec);
+          setOwnLook(own);
+        };
+        void put(next, { look: null, font: null });
+        noteHist.op(() => void put(prev, was), () => void put(next, { look: null, font: null }));
+        ctx.toast(scope === 'everywhere' ? 'Look set for every note that has no look of its own.' : `Look set for ${sub?.name ?? 'this subject'}. Notes with their own look keep it.`);
+      };
+      const resetOwn = () => {
+        done = true;
+        const was = { look: own, font: d.fontStyle ?? null };
+        const next = { look: null, font: null };
+        setOwnLook(next);
+        noteHist.op(() => setOwnLook(was), () => setOwnLook(next));
+        ctx.toast(def.from ? `This note follows the ${def.from === 'subject' ? 'subject' : 'every-note'} look again.` : 'This note has the plain look again.');
+      };
+      openSheet({
+        title: 'Note look',
+        id: 'look-sheet',
+        body: [
+          h('p', { class: 'meta' }, own ? 'This note has its own look.' : def.from === 'subject' ? 'This note follows its subject’s look.' : def.from === 'everywhere' ? 'This note follows the look for every note.' : 'Background and text follow the app theme.'),
+          h('div', { class: 'look-form' },
+            h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Cover'), seg('look-cover', 'Cover', COVERS, () => p.look.cover, (v) => (p.look.cover = v))),
+            h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Headings'), sets),
+            h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Font'), font),
+            h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Accent'), accents),
+            h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Apply to', h('small', { class: 'hint' }, 'A note’s own look always wins over its subject’s and every note’s.')), scopeSeg)
+          )
+        ],
+        actions: [
+          ...(own || d.fontStyle ? [{ label: 'Use default look', id: 'look-reset', run: resetOwn }] : []),
+          { label: 'Cancel' },
+          { label: 'Apply', id: 'look-apply', primary: true, run: apply }
+        ],
+        onClose: () => {
+          if (!done) paintLook();
+        }
+      });
+    }
 
     // ----- review -----
     const paintReview = () => {
@@ -1470,7 +1768,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       return;
     }
     if (id === 'new') {
-      if (templateId && TEMPLATES.some((t) => t.id === templateId)) startNew(templateId);
+      if (templateId && isTemplateId(templateId)) startNew(templateId);
       else {
         isNew = false;
         renderTemplatePicker();

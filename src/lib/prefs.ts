@@ -6,7 +6,10 @@
  * a newer choice).
  */
 
-export type ThemePref = 'system' | 'day' | 'night';
+import { CUSTOM_DEFAULT, isThemeId, readCustom, themeOf, tokensFor, type CustomTheme, type ThemeId } from './themes';
+
+/** 'system' follows the tablet (Study desk by day, Night by night); 'day' and 'night' are Study desk and Night; 0.14 adds 7 themes and Custom. */
+export type ThemePref = 'system' | ThemeId | 'custom';
 
 export interface FontStyle {
   id: string;
@@ -32,6 +35,7 @@ const KEY_FONT = 'upsc.font';
 const KEY_CELEBRATE = 'upsc.celebrate';
 const KEY_WIDTH = 'upsc.width';
 const KEY_OUTLINE = 'upsc.outline';
+const KEY_CUSTOM = 'upsc.custom';
 
 /** Note width: the whole screen (default), or a comfortable reading column. PDFs are A4 either way. */
 export type PageWidth = 'full' | 'comfortable';
@@ -56,7 +60,8 @@ function write(key: string, value: string) {
 const KEY_STAMPS = 'upsc.settingsAt';
 /** Backup name → localStorage key, and a check of the value an import may write. */
 const SYNCED_KEYS: Record<string, { key: string; ok: (v: string) => boolean }> = {
-  theme: { key: 'upsc.theme', ok: (v) => ['system', 'day', 'night'].includes(v) },
+  theme: { key: 'upsc.theme', ok: (v) => v === 'system' || v === 'custom' || isThemeId(v) },
+  custom: { key: KEY_CUSTOM, ok: (v) => jsonObject(v) },
   font: { key: 'upsc.font', ok: (v) => FONT_STYLES.some((f) => f.id === v) },
   width: { key: 'upsc.width', ok: (v) => v === 'full' || v === 'comfortable' },
   outline: { key: 'upsc.outline', ok: (v) => v === 'shown' || v === 'hidden' },
@@ -139,7 +144,23 @@ export function applySettings(raw: unknown): number {
 
 export function getTheme(): ThemePref {
   const v = read(KEY_THEME);
-  return v === 'day' || v === 'night' ? v : 'system';
+  return v === 'custom' || isThemeId(v) ? v : 'system';
+}
+
+/** The Custom theme's choices (base theme, accent, roundness, density). */
+export function getCustom(): CustomTheme {
+  const v = read(KEY_CUSTOM);
+  if (!v) return { ...CUSTOM_DEFAULT };
+  try {
+    return readCustom(JSON.parse(v));
+  } catch {
+    return { ...CUSTOM_DEFAULT };
+  }
+}
+
+export function setCustom(c: CustomTheme) {
+  write(KEY_CUSTOM, JSON.stringify(readCustom(c)));
+  applyAppearance();
 }
 
 export function getFontStyle(): string {
@@ -150,18 +171,43 @@ export function getFontStyle(): string {
 /** True when the night palette is showing right now. */
 export function isNight(): boolean {
   const t = getTheme();
-  return t === 'night' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if (t === 'system') return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return themeOf(t === 'custom' ? getCustom().base : t).dark;
 }
+
+/** Tokens written inline by the last applyAppearance (taken off again for "Match the tablet"). */
+let inlineTokens: string[] = [];
 
 export function applyAppearance() {
   const root = document.documentElement;
   const t = getTheme();
-  if (t === 'system') delete root.dataset.theme;
-  else root.dataset.theme = t;
+  const custom = getCustom();
+  for (const name of inlineTokens) root.style.removeProperty(name);
+  inlineTokens = [];
+  root.style.removeProperty('--round');
+  delete root.dataset.density;
+  if (t === 'system') {
+    // the CSS day / night blocks follow the tablet
+    delete root.dataset.theme;
+  } else {
+    root.dataset.theme = t;
+    for (const [k, v] of Object.entries(tokensFor(t, custom))) {
+      const name = k === 'color-scheme' ? k : `--${k}`;
+      root.style.setProperty(name, v);
+      inlineTokens.push(name);
+    }
+    if (t === 'custom') {
+      root.style.setProperty('--round', String(custom.round / 12));
+      root.dataset.density = custom.density;
+    }
+  }
+  // charts, diagrams and mind maps redraw when this changes
+  root.dataset.ink = t === 'custom' ? `custom:${custom.base}:${custom.accent ?? ''}` : t === 'system' ? `system:${isNight() ? 'night' : 'day'}` : t;
   root.dataset.font = getFontStyle();
   root.dataset.width = getPageWidth();
   root.dataset.outline = outlineShown() ? 'shown' : 'hidden';
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', isNight() ? '#111519' : '#2d5b4e');
+  const tok = t === 'system' ? null : tokensFor(t, custom);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', tok ? (isNight() ? tok.bg : tok.accent) : isNight() ? '#111519' : '#2d5b4e');
   window.dispatchEvent(new Event('themechange'));
 }
 

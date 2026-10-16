@@ -50,7 +50,7 @@ function chartView(legacy: boolean) {
 
     const draw = (force = false) => {
       const d = data();
-      const key = JSON.stringify([d, [...hidden], document.documentElement.dataset.theme ?? '', getComputedStyle(fig).getPropertyValue('--subj')]);
+      const key = JSON.stringify([d, [...hidden], document.documentElement.dataset.ink ?? '', getComputedStyle(fig).getPropertyValue('--subj')]);
       if (!force && key === drawn) return;
       drawn = key;
       fig.dataset.kind = d.kind;

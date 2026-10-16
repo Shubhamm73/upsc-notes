@@ -1,8 +1,11 @@
-import { mergeAttributes, type Editor } from '@tiptap/core';
+import { Extension, mergeAttributes, type Editor } from '@tiptap/core';
 import Heading from '@tiptap/extension-heading';
 import { closeHistory } from '@tiptap/pm/history';
 import type { Node as PMNode } from '@tiptap/pm/model';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { readHeadingLook, type HeadingLook } from '../lib/looks';
+import { SET_LOOKS, type HeadingSet } from '../lib/note-look';
 
 /**
  * Headings with a look (0.12): { type: 'heading', attrs: { level, look: { style, color, fill, corner,
@@ -32,7 +35,7 @@ export const LookHeading = Heading.extend({
   }
 });
 
-function lookAttrs(l: HeadingLook | null): Record<string, string> {
+export function lookAttrs(l: HeadingLook | null): Record<string, string> {
   if (!l) return {};
   const out: Record<string, string> = { 'data-look': l.style, 'data-fill': l.fill, 'data-corner': l.corner, 'data-width': l.width, 'data-align': l.align };
   if (l.color) {
@@ -41,6 +44,47 @@ function lookAttrs(l: HeadingLook | null): Record<string, string> {
   }
   if (l.icon) out['data-icon'] = l.icon;
   return out;
+}
+
+/**
+ * The note's heading style set (0.14): plain headings (look null) are drawn with the set's look through
+ * a node decoration, so nothing is written into the doc and a heading with its own look keeps it.
+ */
+const setKey = new PluginKey('headingSet');
+export const HeadingSetExt = Extension.create<Record<string, never>, { set: HeadingSet }>({
+  name: 'headingSet',
+  addStorage() {
+    return { set: 'classic' };
+  },
+  addProseMirrorPlugins() {
+    const storage = this.storage;
+    return [
+      new Plugin({
+        key: setKey,
+        props: {
+          decorations(state) {
+            const looks = SET_LOOKS[storage.set];
+            if (!looks) return null;
+            const decos: Decoration[] = [];
+            state.doc.descendants((node, pos) => {
+              if (node.type.name !== 'heading') return true;
+              if (!readHeadingLook(node.attrs.look)) decos.push(Decoration.node(pos, pos + node.nodeSize, lookAttrs(node.attrs.level === 2 ? looks.h2 : looks.h3)));
+              return false;
+            });
+            return DecorationSet.create(state.doc, decos);
+          }
+        }
+      })
+    ];
+  }
+});
+
+/** Show a note's headings in a set (redraws at once; the doc is not changed). */
+export function setHeadingSet(editor: Editor, set: HeadingSet) {
+  const st = editor.storage as unknown as { headingSet?: { set: HeadingSet } };
+  if (!st.headingSet || st.headingSet.set === set) return;
+  st.headingSet.set = set;
+  if (!editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(setKey, set).setMeta('addToHistory', false));
 }
 
 /** The heading holding the caret, if any. */
