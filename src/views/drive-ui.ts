@@ -47,7 +47,7 @@ const num = (n: number) => n.toLocaleString('en-IN');
 const mb = (bytes: number) => (bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`);
 
 export function reportText(r: ImportReport): string {
-  return `Imported: ${r.added} added, ${r.updated} updated, ${r.keptNewer} already newer here, ${r.images} images, ${r.cards} review cards, ${r.folders} folders${r.settings ? `, ${r.settings} settings` : ''}.`;
+  return `Imported: ${r.added} added, ${r.updated} updated, ${r.keptNewer} already newer here, ${r.images} images, ${r.cards} review cards, ${r.folders} folders${r.settings ? `, ${r.settings} settings` : ''}${r.styles ? `, ${r.styles} saved ${r.styles === 1 ? 'style' : 'styles'}` : ''}.`;
 }
 
 // ---------- sign-in ----------

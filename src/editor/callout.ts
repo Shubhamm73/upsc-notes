@@ -1,7 +1,9 @@
 import { Node, mergeAttributes, type Editor } from '@tiptap/core';
+import { closeHistory } from '@tiptap/pm/history';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { calloutKind, calloutLabel } from '../lib/callouts';
 import { icon } from '../lib/icons';
+import { readCorner, readFill, type Corner, type Fill } from '../lib/looks';
 
 /**
  * A UPSC callout (Article, Case, Data, Example, Way forward, PYQ): a tinted box with an
@@ -24,7 +26,10 @@ export const Callout = Node.create({
       },
       year: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute('data-year'), renderHTML: (a: { year?: string | null }) => (a.year ? { 'data-year': a.year } : {}) },
       paper: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute('data-paper'), renderHTML: (a: { paper?: string | null }) => (a.paper ? { 'data-paper': a.paper } : {}) },
-      marks: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute('data-marks'), renderHTML: (a: { marks?: string | null }) => (a.marks ? { 'data-marks': a.marks } : {}) }
+      marks: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute('data-marks'), renderHTML: (a: { marks?: string | null }) => (a.marks ? { 'data-marks': a.marks } : {}) },
+      // 0.12: a callout can be restyled like a container (null = the look it always had: soft, round).
+      fill: { default: null, parseHTML: (el: HTMLElement) => readFill(el.getAttribute('data-fill')), renderHTML: (a: { fill?: string | null }) => (a.fill ? { 'data-fill': a.fill } : {}) },
+      corner: { default: null, parseHTML: (el: HTMLElement) => readCorner(el.getAttribute('data-corner')), renderHTML: (a: { corner?: string | null }) => (a.corner ? { 'data-corner': a.corner } : {}) }
     };
   },
 
@@ -58,6 +63,12 @@ export const Callout = Node.create({
         label.textContent = calloutLabel(n.attrs);
         if (n.attrs.clear) dom.dataset.clear = 'both';
         else delete dom.dataset.clear;
+        const fill = readFill(n.attrs.fill);
+        const corner = readCorner(n.attrs.corner);
+        if (fill) dom.dataset.fill = fill;
+        else delete dom.dataset.fill;
+        if (corner) dom.dataset.corner = corner;
+        else delete dom.dataset.corner;
         if (k.id === kind) return;
         kind = k.id;
         dom.dataset.callout = k.id;
@@ -145,6 +156,24 @@ export function removeCallout(editor: Editor) {
     tr.replaceWith(here.pos, here.pos + here.node.nodeSize, here.node.content);
     return true;
   }).run();
+}
+
+/** Fill and corners of the callout round the cursor (null: as callouts always looked). One Undo step. */
+export function setCalloutLook(editor: Editor, look: { fill?: Fill | null; corner?: Corner | null }) {
+  const here = calloutAt(editor);
+  if (!here) return;
+  const next = { ...here.node.attrs };
+  if ('fill' in look) next.fill = look.fill === 'soft' ? null : readFill(look.fill);
+  if ('corner' in look) next.corner = look.corner === 'round' ? null : readCorner(look.corner);
+  editor.view.dispatch(closeHistory(editor.state.tr.setNodeMarkup(here.pos, undefined, next)));
+}
+
+/**
+ * A callout made from "Put in container": the selected lines go in it. Callouts hold text, lists and
+ * pictures only, so a selection with a table, heading, chart or sketch can't become one.
+ */
+export function canMakeCallout(editor: Editor): boolean {
+  return !!calloutAt(editor) || editor.can().wrapIn('callout', { kind: 'article' });
 }
 
 export function calloutKindAt(editor: Editor): string | null {

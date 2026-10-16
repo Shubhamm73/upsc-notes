@@ -17,6 +17,10 @@ the server to the NEW build, check the "new version" banner, tap Reload now, the
 - 0.11 (backup format 5): his device settings (theme, font, width, streak moments) survive the update, the
   upgraded tablet's backup carries them and every record, a fresh tablet takes them, and the old build
   refuses a format-5 backup and stores nothing.
+- 0.12 (backup format 6: saved styles; new nodes: panel, heading looks, table styles): the upgrade adds
+  nothing to any record, the upgraded tablet's backup is format 6 with no styles, the old build refuses a
+  format-6 backup (a container, a heading look, a styled table and a saved style) and stores nothing, and a
+  0.12 note with a container opens read-only in the old build, its stored doc untouched.
 
 Usage (port 4173 must be free; the script starts and stops the servers itself):
   git worktree add /tmp/prev <previous-release-commit> && cd /tmp/prev && ln -s <repo>/node_modules . && npm run build
@@ -396,10 +400,12 @@ try:
             dl.value.save_as(upgraded_backup)
             ub = json.loads(open(upgraded_backup).read())
             sv = {k: v["value"] for k, v in ub.get("settings", {}).items()}
-            check(ub["format"] == 5 and sv.get("theme") == "night" and sv.get("font") == "editorial" and sv.get("width") == "comfortable" and sv.get("celebrate") == "off",
-                  f"the upgraded tablet's backup is format 5 with his settings ({sv})")
+            check(ub["format"] >= 5 and sv.get("theme") == "night" and sv.get("font") == "editorial" and sv.get("width") == "comfortable" and sv.get("celebrate") == "off",
+                  f"the upgraded tablet's backup is format 5+ with his settings ({sv})")
             check(len(ub["notes"]) == len(new["notes"]) and len(ub["vocab"]) == len(new["vocab"]) and len(ub["images"]) == len(new["images"]),
                   f"…and every note, word and picture ({len(ub['notes'])}, {len(ub['vocab'])}, {len(ub['images'])})")
+            if ver(new_v) >= (0, 12, 0):
+                check(ub["format"] == 6 and ub.get("styles") == [], f"0.12: the upgraded tablet's backup is format 6 with no saved styles yet ({ub['format']}, {ub.get('styles')})")
         check(not errors, f"no page errors {errors}")
         ctx.close()
 
@@ -525,6 +531,81 @@ try:
             check(oldpage.evaluate(ALL_NOTES) == [] and (oldpage.evaluate(ALL, "vocab") or []) == [] and (oldpage.evaluate(ALL, "cards") or []) == []
                   and all(f["updatedAt"] == 0 for f in (oldpage.evaluate(ALL, "folders") or [])), f"{old_v} stored nothing from it")
             check(oldpage.evaluate("localStorage.getItem('upsc.theme')") is None, f"{old_v} took none of its settings")
+            back.close()
+        elif ver(new_v) >= (0, 12, 0) and ver(old_v) < (0, 12, 0):
+            # ---- 0.12+: a container, a heading look, a styled table and a saved style, written by the new build ----
+            fresh.goto(URL + "#/n/new/blank")
+            fresh.wait_for_selector("#f-title")
+            fresh.fill("#f-title", "Styled in the new build")
+            fresh.locator(".section-body .rich").first.click()
+            fresh.keyboard.type("/heading")
+            fresh.wait_for_selector("#insert-menu:not([hidden])")
+            fresh.keyboard.press("Enter")
+            fresh.keyboard.type("Rights")
+            fresh.click("#heading-style")
+            fresh.click("#look-grid [data-style='banner']")
+            fresh.click("#look-done")
+            fresh.keyboard.press("End")
+            fresh.keyboard.press("Enter")
+            fresh.keyboard.type("Article 14")
+            fresh.keyboard.press("Enter")
+            fresh.keyboard.type("Article 21")
+            fresh.wait_for_timeout(300)
+            fresh.evaluate("""() => { const root = document.querySelector('.section-body .ProseMirror'); const ps = [...root.querySelectorAll(':scope > p')];
+                const r = document.createRange(); r.setStart(ps[0].firstChild, 0); r.setEnd(ps[1].firstChild, ps[1].firstChild.length);
+                getSelection().removeAllRanges(); getSelection().addRange(r); }""")
+            fresh.wait_for_timeout(300)
+            fresh.click("button[aria-label='Put in container']")
+            fresh.click(".ct-opt[data-container='titled']")
+            fresh.wait_for_timeout(300)
+            fresh.click("#panel-style")
+            fresh.click("#look-save")
+            fresh.fill("#style-name", "Key box")
+            fresh.click("#style-save")
+            fresh.wait_for_timeout(300)
+            fresh.click("#look-done")
+            # the empty line after the container (Control+End doesn't move the caret on macOS)
+            fresh.locator(".section-body .ProseMirror > p").last.click()
+            fresh.keyboard.type("/table")
+            fresh.wait_for_selector("#insert-menu:not([hidden])")
+            fresh.keyboard.press("Enter")
+            fresh.click("#tbl-styles button[data-tstyle='boxed']")
+            fresh.click("#table-insert")
+            fresh.keyboard.type("House")
+            expect(fresh.locator("#save-state")).to_have_attribute("data-state", "saved", timeout=5000)
+            fresh.goto(URL + "#/settings")
+            with fresh.expect_download() as dl:
+                fresh.click("#backup-download")
+            newer = os.path.join(profile + "-files", "new-backup.json")
+            dl.value.save_as(newer)
+            nb = json.loads(open(newer).read())
+            styled = next(n for n in nb["notes"] if n["title"] == "Styled in the new build")
+            kinds = [b["type"] for b in styled["sections"][0]["doc"]["content"]]
+            check(nb["format"] == 6 and [s["name"] for s in nb["styles"]] == ["Key box"] and "panel" in kinds and "table" in kinds,
+                  f"the new build's backup is format 6 with the saved style, the container and the table ({nb['format']}, {kinds})")
+            fresh_browser.close()
+            serve(OLD)
+            back = p.chromium.launch()
+            oldpage = back.new_page()
+            oldpage.on("pageerror", lambda e: errors.append(str(e)))
+            oldpage.goto(URL + "#/settings")
+            oldpage.wait_for_selector("#import-file", state="attached")
+            oldpage.set_input_files("#import-file", newer)
+            oldpage.wait_for_timeout(2500)
+            check("newer version" in oldpage.inner_text("body"), f"{old_v} refuses a {new_v} backup (format 6: \"made by a newer version\")")
+            check(oldpage.evaluate(ALL_NOTES) == [] and (oldpage.evaluate(ALL, "vocab") or []) == [] and (oldpage.evaluate(ALL, "cards") or []) == []
+                  and not any(m.get("key") == "styles" for m in (oldpage.evaluate(ALL, "meta") or [])), f"{old_v} stored nothing from it (no note, word, card or style)")
+            # a 0.12 note that reached the old build anyway (e.g. two tablets on different versions): read-only, untouched
+            oldpage.evaluate("""(rec) => new Promise((res) => { const r = indexedDB.open('upsc-notes');
+                r.onsuccess = () => { const tx = r.result.transaction('notes', 'readwrite'); tx.objectStore('notes').put(rec); tx.oncomplete = () => { r.result.close(); res(true); }; }; })""", styled)
+            oldpage.goto(URL + "#/n/" + styled["id"])
+            oldpage.wait_for_selector(".section-body .ProseMirror")
+            oldpage.wait_for_timeout(2500)
+            check(oldpage.locator(".section-body .ProseMirror").first.get_attribute("contenteditable") == "false", f"{old_v} opens a 0.12 note with a container read-only")
+            # (0.11 shows a notice in place of a section it can't draw, instead of a blank page)
+            check("written by a newer version" in oldpage.inner_text(".section-body"), f"{old_v} says the section was written by a newer version")
+            kept = next((n for n in oldpage.evaluate(ALL_NOTES) if n["id"] == styled["id"]), None)
+            check(kept is not None and kept["updatedAt"] == styled["updatedAt"] and kept["sections"] == styled["sections"], f"{old_v} rewrites nothing in it (doc and updatedAt unchanged)")
             back.close()
         else:
             fresh_browser.close()

@@ -733,8 +733,11 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       reviewInfo
     );
     const paintSubject = () => {
-      const { sub } = index.placeOf(d);
+      const { sub, main } = index.placeOf(d);
       subjDot.style.background = index.noteColour(d);
+      // headings, containers and tables that follow the subject colour (0.12); a Split heading shows the main subject
+      canvasEl.style.setProperty('--subj', index.noteColour(d));
+      canvasEl.style.setProperty('--subj-name', JSON.stringify(main?.name ?? 'Notes'));
       subjText.textContent = index.label(d);
       subject.setAttribute('aria-label', `Subject: ${index.label(d)}. Move to…`);
       backLink.href = sub ? folderHref(sub.id) : '#/notes';

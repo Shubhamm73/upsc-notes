@@ -376,6 +376,10 @@ with sync_playwright() as p:
         page.wait_for_timeout(150)
         cp = page.evaluate("getComputedStyle(document.querySelector('.section-body .img-clip')).clipPath")
         check(page.locator(".section-body .img-block").get_attribute("data-shape") == shape and (cp.startswith("polygon") if shape != "rect" else cp == "none"), f"shape {shape} applies ({cp[:30]})")
+    expect(page.locator("#save-state")).to_have_attribute("data-state", "saved", timeout=5000)
+    # 0.12: each Crop & shape result is its own Undo step (closeHistory), however quick the next one comes
+    prev = page.evaluate(NOTE, "Shapes")["sections"][0]["doc"]["content"][0]["attrs"]
+    prev_box = page.locator(".section-body .img-clip").bounding_box()
     # turn + mirror + reset
     page.locator(".section-body .img-block img").click()
     page.click("button[aria-label='Crop and shape']")
@@ -394,7 +398,10 @@ with sync_playwright() as p:
     page.click("#note-undo")
     page.wait_for_timeout(150)
     clip = page.locator(".section-body .img-clip").bounding_box()
-    check(abs(clip["width"] / clip["height"] - 1) < 0.05, f"Undo takes back the whole Crop & shape step (square crop again, {clip['width']:.0f}×{clip['height']:.0f})")
+    expect(page.locator("#save-state")).to_have_attribute("data-state", "saved", timeout=5000)
+    back = page.evaluate(NOTE, "Shapes")["sections"][0]["doc"]["content"][0]["attrs"]
+    check(back == prev and abs(clip["width"] / clip["height"] - prev_box["width"] / prev_box["height"]) < 0.05,
+          f"Undo takes back the whole Crop & shape step, and only it (crop before it again, {clip['width']:.0f}×{clip['height']:.0f})")
     page.click("#note-redo")
     page.wait_for_timeout(150)
     clip = page.locator(".section-body .img-clip").bounding_box()

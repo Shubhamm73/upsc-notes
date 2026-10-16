@@ -106,6 +106,9 @@ with sync_playwright() as p:
     mark(page, "Money bills start here")
     page.keyboard.press("Enter")
     slash(page, "table")
+    page.wait_for_selector("#table-dialog")  # 0.12: the size dialog; 3 × 3 as before
+    page.click("#tbl-rows-minus")
+    page.click("#table-insert")
     page.keyboard.type("House")
     page.keyboard.press("Tab")
     page.keyboard.type("Term")

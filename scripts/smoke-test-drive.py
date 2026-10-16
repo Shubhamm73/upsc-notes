@@ -305,10 +305,10 @@ with sync_playwright() as p:
     b = fake.backups(folder)
     check(len(b) == 1, "one backup in the folder")
     data = json.loads(b[0]["content"])
-    check(data["app"] == "upsc-notes" and data["format"] == 5 and data["counts"]["notes"] == 2, f"the Drive file is a format-5 backup with both notes ({data['format']}, {data['counts']})")
+    check(data["app"] == "upsc-notes" and data["format"] == 6 and data["counts"]["notes"] == 2, f"the Drive file is a format-6 backup with both notes ({data['format']}, {data['counts']})")
     check(data["settings"].get("theme", {}).get("value") == "night" and data["settings"]["theme"]["at"] > 0, "settings travel in the backup, with when they were chosen")
     check("drive" in data["settings"] and json.loads(data["settings"]["drive"]["value"])["every"] == 2, "the Drive schedule travels too")
-    check(b[0]["appProperties"].get("notes") == "2" and b[0]["appProperties"].get("format") == "5", f"the file is labelled with its counts ({b[0]['appProperties']})")
+    check(b[0]["appProperties"].get("notes") == "2" and b[0]["appProperties"].get("format") == "6", f"the file is labelled with its counts ({b[0]['appProperties']})")
     check(re.match(r"upsc-notes-backup-\d{4}-\d\d-\d\d-\d{4}\.json$", b[0]["name"]) is not None, f"file name has date and time ({b[0]['name']})")
     check(b[0]["declaredLength"] == str(len(b[0]["content"])), "resumable upload: declared length matches the file")
     st = state(page)
@@ -540,7 +540,7 @@ with sync_playwright() as p:
     bad["settings"] = ["not", "an", "object"]
     p3.set_input_files("#import-file", files=[{"name": "bad.json", "mimeType": "application/json", "buffer": json.dumps(bad).encode()}])
     expect(p3.locator(".import-result")).to_contain_text("damaged", timeout=5000)
-    check(True, "format 4 imports; a format-5 file with broken settings is refused")
+    check(True, "format 4 imports; a format-6 file with broken settings is refused")
     ctx3.close()
 
     # ---------------- Picker: a folder he chooses ----------------

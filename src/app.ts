@@ -15,6 +15,7 @@ import { icon } from './lib/icons';
 import { takeRedirectResult } from './lib/drive';
 import { startDriveSchedule } from './lib/drive-backup';
 import { resumeAfterRedirect } from './views/drive-ui';
+import { loadStyles } from './lib/my-styles';
 
 export interface View {
   route(parts: string[]): void;
@@ -207,6 +208,8 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
     .then(() => purgeOldTrash())
     .catch(() => 0)
     .then(() => ensureFolders())
+    .catch(() => 0)
+    .then(() => loadStyles())
     .catch(() => 0)
     .finally(() => {
       void route();

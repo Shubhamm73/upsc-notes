@@ -6,7 +6,7 @@
  * The Google token lasts about an hour: when it has run out, his next tap outside a note renews it
  * (Google's window flashes and closes by itself); with the full-page sign-in it is renewed at launch.
  */
-import { buildBackup, importBackupText, markBackedUp, type ImportReport } from './backup';
+import { FORMAT, buildBackup, importBackupText, markBackedUp, type ImportReport } from './backup';
 import { BIG_CHANGE } from './changes';
 import { DriveError, folderInfo, gisReady, hasToken, listBackups, loadGis, ourFolder, trashFile, upload, download, type DriveFile, signInPopup, signInRedirect } from './drive';
 import { FOLDER_NAME, KEEP_BACKUPS } from './drive-config';
@@ -16,7 +16,7 @@ export const DAY = 86_400_000;
 const HOUR = 3_600_000;
 const RETRY = 15 * 60_000;
 
-/** Chosen by him; travels in the backup (format 5 settings) so a restored tablet backs up the same way. */
+/** Chosen by him; travels in the backup (settings, since format 5) so a restored tablet backs up the same way. */
 export interface DriveCfg {
   every: 1 | 2 | 7;
   onChange: boolean;
@@ -201,7 +201,7 @@ export function backupToDrive(opts: { auto: boolean }): Promise<'done' | 'empty'
       const folder = await ensureFolder();
       const made = await upload(blob, fileName(), folder, {
         app: 'upsc-notes',
-        format: '5',
+        format: String(FORMAT),
         notes: String(counts.notes),
         words: String(counts.vocab),
         images: String(counts.images),

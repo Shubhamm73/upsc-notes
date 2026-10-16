@@ -1,5 +1,5 @@
 /** The app's small line-icon set, drawn inline so it works offline and follows the text colour. */
-const PATHS: Record<string, string> = {
+export const PATHS: Record<string, string> = {
   today:
     '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/>',
   notes: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7"/>',
@@ -43,7 +43,15 @@ const PATHS: Record<string, string> = {
   image: '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20 16l-5-5-8 8"/>',
   article: '<path d="M14.5 6.5C14 5 13 4.5 12 4.5c-1.7 0-3 1-3 2.4 0 3.2 6 2.4 6 5.6 0 1.4-1.3 2.4-3 2.4"/><path d="M9.5 17.5c.5 1.5 1.5 2 2.5 2 1.7 0 3-1 3-2.4 0-3.2-6-2.4-6-5.6 0-1.4 1.3-2.4 3-2.4"/>',
   case: '<path d="M12 4v16M7 20h10M5 8h14M7 8l-3 6h6zM17 8l-3 6h6z"/>',
-  example: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>'
+  example: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
+  // 0.12: heading and container icons, style tools
+  star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
+  flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
+  bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
+  book: '<path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5c-.8 0-1.5-.7-1.5-1.5z"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5z"/>',
+  palette: '<path d="M12 3a9 9 0 1 0 0 18c1 0 1.6-.8 1.6-1.6 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7.5" r="1"/><circle cx="14.5" cy="7.5" r="1"/>',
+  container: '<rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="M7 9.5h10M7 13h7"/>',
+  columns: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M12 5v14"/>'
 };
 
 export function icon(name: keyof typeof PATHS | string, size = 22): SVGSVGElement {

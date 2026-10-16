@@ -56,7 +56,7 @@ export function noteSearchText(n: Note): string {
     n.subject,
     n.explain,
     n.connect,
-    ...n.sections.map((s) => [s.heading, docToText(s.doc), ...calloutsIn(s.doc).map((c) => `${c.label} callout`), ...imageCaptions(s.doc), ...sketchesIn(s.doc).map(() => 'sketch')].join(' '))
+    ...n.sections.map((s) => [s.heading, docToText(s.doc), ...calloutsIn(s.doc).map((c) => `${c.label} callout`), ...imageCaptions(s.doc), ...lookTexts(s.doc), ...sketchesIn(s.doc).map(() => 'sketch')].join(' '))
   ]
     .join(' ')
     .toLowerCase();
@@ -78,6 +78,20 @@ export function imageCaptions(doc: DocNode | undefined): string[] {
   const out: string[] = [];
   const walk = (n: DocNode) => {
     if ((n.type === 'imageBlock' || n.type === 'sketchBlock') && typeof n.attrs?.caption === 'string' && n.attrs.caption.trim()) out.push(n.attrs.caption.trim());
+    (n.content ?? []).forEach(walk);
+  };
+  walk(doc ?? { type: 'doc' });
+  return out;
+}
+
+/** Table captions and container titles / quote authors (0.12): searchable like text. */
+export function lookTexts(doc: DocNode | undefined): string[] {
+  const out: string[] = [];
+  const walk = (n: DocNode) => {
+    for (const k of n.type === 'table' ? ['caption'] : n.type === 'panel' ? ['title', 'author'] : []) {
+      const v = n.attrs?.[k];
+      if (typeof v === 'string' && v.trim()) out.push(v.trim());
+    }
     (n.content ?? []).forEach(walk);
   };
   walk(doc ?? { type: 'doc' });

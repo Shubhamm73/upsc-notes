@@ -5,6 +5,9 @@ import { DEFAULT_CHART } from './chart-block';
 import { setCallout } from './callout';
 import { selectSketchBefore } from './sketch-block';
 import { SKETCH_H } from '../lib/sketch';
+import { savedStyles } from '../lib/my-styles';
+import { PANEL_INFO, readPanelLook } from '../lib/looks';
+import { applySavedStyle, openContainerSheet, openTableDialog } from './look-tools';
 
 export interface InsertEnv {
   pickImage(editor: Editor): void;
@@ -79,10 +82,7 @@ export const INSERT_ITEMS: InsertItem[] = [
     hint: 'Rows and columns',
     glyph: 'i:table',
     keywords: 'table grid rows columns compare',
-    run: (e) => {
-      e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
-      ensureParagraphAfter(e);
-    }
+    run: (e) => openTableDialog(e)
   },
   { id: 'chart', name: 'Chart', hint: 'Bar, line or pie from a small grid', glyph: 'i:data', keywords: 'chart graph bar line pie', run: (e) => insertBlocks(e, { type: 'chartBlock', attrs: structuredClone(DEFAULT_CHART) }) },
   { id: 'image', name: 'Image', hint: 'From the tablet, resizable', glyph: 'i:image', keywords: 'image photo picture diagram map', run: (e, env) => env.pickImage(e) },
@@ -96,6 +96,14 @@ export const INSERT_ITEMS: InsertItem[] = [
       insertBlocks(e, { type: 'sketchBlock', attrs: { strokes: [], height: SKETCH_H, width: 100, align: 'center', caption: '' } });
       selectSketchBefore(e);
     }
+  },
+  {
+    id: 'container',
+    name: 'Container',
+    hint: 'Panel, titled box, sticky note, frame, quote, two columns',
+    glyph: 'i:container',
+    keywords: 'container panel box sticky note frame quote columns two column key point remember',
+    run: (e, env) => openContainerSheet(e, env.toast)
   },
   { id: 'callout', name: 'Callout', hint: 'Article, Case, Data, Example, Way forward, PYQ', glyph: 'i:article', keywords: 'callout box pyq', submenu: true, run: () => undefined },
   {
@@ -118,7 +126,15 @@ export function filterItems(query: string): InsertItem[] {
   const q = query.trim().toLowerCase();
   const base = INSERT_ITEMS.filter((i) => !i.plusOnly);
   if (!q) return base;
-  const all = [...base, ...CALLOUT_ITEMS];
+  const mine: InsertItem[] = savedStyles().map((st) => ({
+    id: `style-${st.id}`,
+    name: st.name,
+    hint: st.kind === 'heading' ? 'My style · heading' : `My style · ${PANEL_INFO[readPanelLook(st.look).kind].name}`,
+    glyph: 'i:palette',
+    keywords: 'my style mystyle saved',
+    run: (ed) => applySavedStyle(ed, st)
+  }));
+  const all = [...base, ...CALLOUT_ITEMS, ...mine];
   const starts = all.filter((i) => i.name.toLowerCase().startsWith(q));
   const words = all.filter((i) => !starts.includes(i) && i.name.toLowerCase().split(/\s+/).some((w) => w.startsWith(q)));
   const keys = all.filter((i) => !starts.includes(i) && !words.includes(i) && i.keywords.toLowerCase().includes(q));

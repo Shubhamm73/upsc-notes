@@ -12,7 +12,7 @@ import type { Node as PMNode } from '@tiptap/pm/model';
  * - Above / below: "+ Line above / below" on a selected picture.
  * - Typing while a picture is selected starts a new line after it instead of replacing it.
  */
-const CLEARABLE = ['paragraph', 'heading', 'bulletList', 'orderedList', 'blockquote', 'callout', 'horizontalRule'];
+const CLEARABLE = ['paragraph', 'heading', 'bulletList', 'orderedList', 'blockquote', 'callout', 'horizontalRule', 'panel'];
 const PICTURES = ['imageBlock', 'chartBlock', 'sketchBlock'];
 /** Pictures that can float with text beside them (charts since 0.11). */
 const FLOATS = ['imageBlock', 'sketchBlock', 'chartBlock'];

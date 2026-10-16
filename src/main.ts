@@ -15,6 +15,7 @@ import '@fontsource/caveat/latin-700.css';
 import '@fontsource/nunito/latin-400.css';
 import '@fontsource/nunito/latin-700.css';
 import '@fontsource/fraunces/latin-600.css';
+import '@fontsource/ibm-plex-mono/latin-400.css';
 import { applyAppearance } from './lib/prefs';
 import './styles.css';
 import { registerSW } from 'virtual:pwa-register';

@@ -400,7 +400,7 @@ with sync_playwright() as p:
     bpath = OUT / "ui3-backup.json"
     dl.value.save_as(bpath)
     bk = json.loads(bpath.read_text())
-    check(bk["format"] == 5 and bk["schemaVersion"] == 4, "backup: format 5 (0.11: settings), schema 4")
+    check(bk["format"] == 6 and bk["schemaVersion"] == 4, "backup: format 6 (0.12: saved styles), schema 4")
     check(len(bk["cards"]) == 4 and bk["counts"]["cards"] == 4 and bk["meta"]["reviewDays"] == [D0, D1], "backup carries all cards (retired too) and the review days")
 
     # ---- D4: re-highlighting a removed line brings its card back ----

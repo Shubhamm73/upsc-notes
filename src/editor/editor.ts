@@ -2,6 +2,7 @@ import { Editor, Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { BulletList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
+import Document from '@tiptap/extension-document';
 import Highlight from '@tiptap/extension-highlight';
 import { Placeholder } from '@tiptap/extensions';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
@@ -13,6 +14,12 @@ import { SketchBlock } from './sketch-block';
 import { Callout } from './callout';
 import { pasteExtension, type PasteHooks } from './paste';
 import { PictureFlow } from './flow';
+import { LookHeading } from './heading-look';
+import { Panel, PanelColumn } from './panel';
+import { StyledTable, TableFigures } from './table';
+
+/** The doc: blocks, and containers (0.12), which live only at the top level. */
+const PanelDoc = Document.extend({ content: '(block | panel)+' });
 
 /** Bullet list with a style switch: dots (default) or dashes. */
 const StyledBulletList = BulletList.extend({
@@ -95,16 +102,28 @@ function slashExtension(hook: SlashHook) {
   });
 }
 
+/** Attributes added in 0.11 and 0.12 that are left out of the saved JSON while they hold their default (null). */
+const QUIET: Record<string, string[]> = {
+  table: ['tstyle', 'color', 'caption', 'firstCol'],
+  heading: ['look'],
+  callout: ['fill', 'corner']
+};
+
 /**
- * The editor's JSON without `clear: null` (PictureFlow's "start below the picture" attribute when off),
- * so paragraphs keep the shape older notes and backups have.
+ * The editor's JSON without `clear: null` (PictureFlow's "start below the picture" attribute when off)
+ * and without the 0.12 look attributes while unset, so blocks keep the shape older notes and backups have.
  */
 function tidy(n: DocNode): DocNode {
-  // `clear: false` matters only on a heading (it sits beside a picture, 0.11); null is the default everywhere.
-  if (n.attrs && 'clear' in n.attrs && (n.attrs.clear == null || (n.attrs.clear === false && n.type !== 'heading'))) {
-    const { clear: _off, ...rest } = n.attrs;
-    n.attrs = rest;
-    if (!Object.keys(rest).length) delete n.attrs;
+  if (n.attrs) {
+    const drop = (QUIET[n.type] ?? []).filter((k) => k in n.attrs! && n.attrs![k] == null);
+    // `clear: false` matters only on a heading (it sits beside a picture, 0.11); null is the default everywhere.
+    if ('clear' in n.attrs && (n.attrs.clear == null || (n.attrs.clear === false && n.type !== 'heading'))) drop.push('clear');
+    if (drop.length) {
+      const rest = { ...n.attrs };
+      for (const k of drop) delete rest[k];
+      n.attrs = rest;
+      if (!Object.keys(rest).length) delete n.attrs;
+    }
   }
   n.content?.forEach(tidy);
   return n;
@@ -136,15 +155,22 @@ export function createEditor(opts: {
     content: opts.content as object,
     extensions: [
       StarterKit.configure({
-        heading: { levels: [2, 3, 4] },
+        document: false,
+        heading: false,
         bulletList: false,
         code: false,
         codeBlock: false,
         link: { openOnClick: false, autolink: true, defaultProtocol: 'https' }
       }),
+      PanelDoc,
+      LookHeading.configure({ levels: [2, 3, 4] }),
       StyledBulletList,
       Highlight,
-      TableKit.configure({ table: { resizable: true, cellMinWidth: 80 } }),
+      TableKit.configure({ table: false }),
+      StyledTable,
+      TableFigures,
+      Panel,
+      PanelColumn,
       ImageBlock,
       ChartBlock,
       SketchBlock,

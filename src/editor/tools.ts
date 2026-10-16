@@ -11,6 +11,12 @@ import { CALLOUT_ITEMS, INSERT_ITEMS, cycleList, filterItems, insertBlocks, type
 import { sweepKey, type SlashHook } from './editor';
 import type { PasteHooks } from './paste';
 import { setSketchHooks } from './sketch-block';
+import { openPopover } from '../lib/menu';
+import { readHeadingLook } from '../lib/looks';
+import { headingAt } from './heading-look';
+import { panelAt, removePanel } from './panel';
+import { tableAt, tableSize } from './table';
+import { askSaveStyle, closeSizePopover, createLookPanel, hasLastHeading, openContainerSheet, openSizePopover, sameAsLastHeading } from './look-tools';
 
 export const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -107,6 +113,11 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     });
     buttons.push(b);
     return b;
+  };
+
+  const withId = <T extends HTMLElement>(el: T, id: string): T => {
+    el.id = id;
+    return el;
   };
 
   // ---------- images ----------
@@ -310,7 +321,8 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     btn('I', 'Italic', (e) => e.chain().focus().toggleItalic().run(), 'fb i', (e) => e.isActive('italic')),
     btn('U', 'Underline', (e) => e.chain().focus().toggleUnderline().run(), 'fb u', (e) => e.isActive('underline')),
     btn('Mark', 'Highlight', (e) => toggleMark(e), 'fb mark', (e) => e.isActive('highlight')),
-    btn('Link', 'Add, edit or remove a link', () => openLinkRow(), 'fb', (e) => e.isActive('link'))
+    btn('Link', 'Add, edit or remove a link', () => openLinkRow(), 'fb', (e) => e.isActive('link')),
+    btn('Container', 'Put in container', (e) => openContainerSheet(e, opts.toast), 'fb')
   );
   const bubble = h('div', { class: 'bubble', role: 'toolbar', 'aria-label': 'Format selection', id: 'bubble', hidden: true }, bubbleBtns, linkRow);
   let linkFor: Editor | null = null;
@@ -434,10 +446,68 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     const s = selectedFloat(e);
     if (s) e.view.dispatch(e.state.tr.setNodeMarkup(s.from, undefined, { ...s.node.attrs, align: 'center' }));
   };
+  // ---------- styles: tables, headings, containers (0.12) ----------
+  const lookPanel = createLookPanel(() => editor, opts.toast);
+  // "4 × 3 ▾": rows and columns together in one popover
+  const sizeBtn = btn('3 × 3 ▾', 'Table size: rows and columns', () => openSizePopover(editor!, sizeBtn), 'tb size-btn');
+  sizeBtn.id = 'table-size';
+  sizeBtn.setAttribute('aria-haspopup', 'dialog');
+  const levelBtn = btn('H2 ▾', 'Heading level', () => openLevels(), 'tb level-btn');
+  levelBtn.id = 'heading-level';
+  levelBtn.setAttribute('aria-haspopup', 'menu');
+  const setLevel = (e: Editor, level: number | null) => {
+    const hd = headingAt(e);
+    if (!hd) return;
+    if (level === null) e.chain().focus().setParagraph().run();
+    else e.view.dispatch(e.state.tr.setNodeMarkup(hd.pos, undefined, { ...hd.node.attrs, level }));
+    sync();
+  };
+  const openLevels = () => {
+    const e = editor;
+    if (!e) return;
+    const now = headingAt(e)?.node.attrs.level;
+    openPopover(
+      levelBtn,
+      [
+        ...[2, 3, 4].map((l) => ({ label: `${now === l ? '✓ ' : ''}Heading ${l - 1} (H${l})`, aria: `H${l}`, run: () => setLevel(e, l) })),
+        { label: 'Normal text', aria: 'Normal text', run: () => setLevel(e, null) }
+      ],
+      'Heading level'
+    );
+  };
+  const headingLook = (e: Editor) => readHeadingLook(headingAt(e)?.node.attrs.look);
+  const headingOps = h(
+    'div',
+    { class: 'ctx-group tb-heading', role: 'group', 'aria-label': 'Heading' },
+    h('span', { class: 'ctx-label' }, 'Heading'),
+    withId(btn(h('span', { class: 'tb-ic' }, icon('palette', 18), 'Style'), 'Heading style', () => lookPanel.open('heading'), 'tb'), 'heading-style'),
+    levelBtn,
+    withId(btn('Same as last', 'Same look as the last heading', (e) => sameAsLastHeading(e, opts.toast), 'tb', undefined, () => hasLastHeading()), 'heading-same'),
+    withId(btn('Save as my style', 'Save this heading look as my style', (e) => {
+      const l = headingLook(e);
+      if (l) askSaveStyle('heading', l, opts.toast);
+    }, 'tb', undefined, (e) => !!headingLook(e)), 'heading-save')
+  );
+  const panelOps = h(
+    'div',
+    { class: 'ctx-group tb-panel', role: 'group', 'aria-label': 'Container' },
+    h('span', { class: 'ctx-label' }, 'Container'),
+    withId(btn(h('span', { class: 'tb-ic' }, icon('palette', 18), 'Style'), 'Container style', () => lookPanel.open('panel'), 'tb'), 'panel-style'),
+    withId(btn('Change', 'Change the kind of container', (e) => openContainerSheet(e, opts.toast), 'tb'), 'panel-change'),
+    withId(btn('Remove container', 'Remove container, keep what is in it', (e) => removePanel(e), 'tb danger'), 'panel-remove-bar')
+  );
+  const onPanelEdit = (ev: Event) => {
+    const field = (ev as CustomEvent<{ field: 'title' | 'author' }>).detail?.field;
+    window.setTimeout(() => lookPanel.open('panel', field), 0);
+  };
+  document.addEventListener('panel-edit', onPanelEdit);
+
   const tableOps = h(
     'div',
     { class: 'ctx-group tb-table', role: 'group', 'aria-label': 'Table' },
     h('span', { class: 'ctx-label' }, 'Table'),
+    sizeBtn,
+    btn(h('span', { class: 'tb-ic' }, icon('palette', 18), 'Style'), 'Table style', () => lookPanel.open('table'), 'tb'),
     btn('+ Row', 'Add row below', (e) => e.chain().focus().addRowAfter().run(), 'tb'),
     btn('+ Column', 'Add column to the right', (e) => e.chain().focus().addColumnAfter().run(), 'tb'),
     btn('− Row', 'Delete row', (e) => e.chain().focus().deleteRow().run(), 'tb'),
@@ -446,12 +516,6 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     btn('Fit width', 'Fit the table to the page width', (e) => fitTable(e), 'tb', undefined, (e) => !!tableAt(e) && hasColWidths(tableAt(e)!.node)),
     btn('Delete table', 'Delete table', (e) => e.chain().focus().deleteTable().run(), 'tb danger')
   );
-  /** The table around the caret. */
-  const tableAt = (e: Editor) => {
-    const { $from } = e.state.selection;
-    for (let d = $from.depth; d > 0; d--) if ($from.node(d).type.name === 'table') return { pos: $from.before(d), node: $from.node(d) };
-    return null;
-  };
   const hasColWidths = (table: PMNode) => {
     let found = false;
     table.descendants((n) => {
@@ -577,6 +641,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     { class: 'ctx-group tb-callout', role: 'group', 'aria-label': 'Callout' },
     h('span', { class: 'ctx-label' }, 'Callout'),
     ...CALLOUT_KINDS.map((k) => btn(k.label, `${k.label} callout`, (e) => setCallout(e, k.id), 'tb', (e) => calloutKindAt(e) === k.id)),
+    withId(btn(h('span', { class: 'tb-ic' }, icon('palette', 18), 'Style'), 'Callout style', () => lookPanel.open('callout'), 'tb'), 'callout-style'),
     btn('Remove box', 'Remove callout box, keep the text', (e) => removeCallout(e), 'tb danger'),
     pyqFields
   );
@@ -584,7 +649,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
   const belowBtn = btn('↓ Below picture', 'Start this line below the picture', (e) => setBelowPicture(e, true), 'tb');
   const besideBtn = btn('↑ Beside picture', 'Put this line back beside the picture', (e) => setBelowPicture(e, false), 'tb');
   const flowOps = h('div', { class: 'ctx-group tb-flow', role: 'group', 'aria-label': 'Text and picture' }, h('span', { class: 'ctx-label' }, 'Text'), belowBtn, besideBtn);
-  const contextBar = h('div', { class: 'ctxbar', id: 'ctxbar', role: 'toolbar', 'aria-label': 'Block tools', hidden: true }, tableOps, imageOps, blockOps, flowOps, calloutOps);
+  const contextBar = h('div', { class: 'ctxbar', id: 'ctxbar', role: 'toolbar', 'aria-label': 'Block tools', hidden: true }, headingOps, panelOps, tableOps, imageOps, blockOps, flowOps, calloutOps);
 
   // ---------- touch bar (portrait, above the keyboard) ----------
   const insertBtn = h('button', { type: 'button', class: 'tbar-btn', 'aria-label': 'Insert', id: 'tbar-insert' }, icon('plus', 24));
@@ -635,6 +700,15 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     }
     if (e) {
       tableOps.hidden = !inTable(e);
+      const t = tableAt(e);
+      if (t) {
+        const size = tableSize(t.node);
+        sizeBtn.textContent = `${size.rows} × ${size.cols} ▾`;
+      }
+      const hd = headingAt(e);
+      headingOps.hidden = !hd;
+      if (hd) levelBtn.textContent = `H${hd.node.attrs.level} ▾`;
+      panelOps.hidden = !panelAt(e);
       const float = selectedFloat(e);
       imageOps.hidden = !float;
       const type = float?.node.type.name;
@@ -659,10 +733,11 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
       belowBtn.hidden = !beside;
       besideBtn.hidden = !below;
       flowOps.hidden = !below && !beside;
-      contextBar.hidden = tableOps.hidden && imageOps.hidden && blockOps.hidden && calloutOps.hidden && flowOps.hidden;
+      contextBar.hidden = headingOps.hidden && panelOps.hidden && tableOps.hidden && imageOps.hidden && blockOps.hidden && calloutOps.hidden && flowOps.hidden;
     } else {
       contextBar.hidden = true;
     }
+    lookPanel.sync();
     syncBubble();
   }
 
@@ -683,7 +758,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
   window.visualViewport?.addEventListener('resize', onViewport);
   window.visualViewport?.addEventListener('scroll', onViewport);
   document.addEventListener('pointerdown', onDocPointer);
-  document.body.append(menu, bubble, touchbar, fileInput);
+  document.body.append(menu, bubble, touchbar, fileInput, lookPanel.el);
   setSketchHooks(opts.history);
 
   return {
@@ -702,6 +777,8 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
       } else {
         // the note closed under the caret: no touch bar without an editor
         closeMenu();
+        lookPanel.close();
+        closeSizePopover();
         document.body.classList.remove('writing');
       }
       sync();
@@ -715,7 +792,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
       // Let the focus land first: tapping the touch bar or the link box keeps writing mode.
       window.setTimeout(() => {
         const a = document.activeElement;
-        const stillWriting = !!a && (a.closest('.ProseMirror') || bubble.contains(a) || touchbar.contains(a));
+        const stillWriting = !!a && (a.closest('.ProseMirror') || bubble.contains(a) || touchbar.contains(a) || lookPanel.el.contains(a) || a.closest('.sheet, .size-pop, .popover'));
         if (!stillWriting) {
           document.body.classList.remove('writing');
           if (menuEditor === target) closeMenu();
@@ -730,6 +807,11 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
         closeLinkRow();
         return true;
       }
+      if (closeSizePopover()) return true;
+      if (lookPanel.close()) {
+        editor?.commands.focus();
+        return true;
+      }
       // Esc on the slash menu keeps the typed "/word" and does not reopen until the line changes.
       if (menuMode === 'slash' && menuEditor) dismissedAt = menuEditor.state.selection.$from.start();
       return closeMenu();
@@ -741,6 +823,9 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
       window.visualViewport?.removeEventListener('resize', onViewport);
       window.visualViewport?.removeEventListener('scroll', onViewport);
       document.removeEventListener('pointerdown', onDocPointer);
+      document.removeEventListener('panel-edit', onPanelEdit);
+      closeSizePopover();
+      lookPanel.el.remove();
       setSketchHooks(null);
       menu.remove();
       bubble.remove();

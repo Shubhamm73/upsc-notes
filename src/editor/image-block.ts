@@ -3,6 +3,7 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import { imageUrl } from './images';
 import { clipCss, isPlain, normRotate, placeRotated, readCrop, shapeOf } from '../lib/shapes';
 import { openCropEditor } from './crop';
+import { closeHistory } from '@tiptap/pm/history';
 
 export type Align = 'left' | 'center' | 'right';
 
@@ -179,10 +180,12 @@ export const ImageBlock = Node.create({
       };
       paint(node);
 
-      const commit = (attrs: Record<string, unknown>) => {
+      /** `own`: its own Undo step, never merged with an edit made just before (Crop & shape). */
+      const commit = (attrs: Record<string, unknown>, own = false) => {
         const pos = typeof getPos === 'function' ? getPos() : undefined;
         if (pos === undefined) return;
-        editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...current.attrs, ...attrs }));
+        const tr = editor.state.tr.setNodeMarkup(pos, undefined, { ...current.attrs, ...attrs });
+        editor.view.dispatch(own ? closeHistory(tr) : tr);
       };
 
       // Crop & shape: double-tap the picture, or the button in the image tools (which sends 'open-crop').
@@ -195,7 +198,7 @@ export const ImageBlock = Node.create({
           const res = await openCropEditor({ src: img.src, width: img.naturalWidth, height: img.naturalHeight, crop: readCrop(a.crop), shape: a.shape, rotate: a.rotate, flip: !!a.flip });
           if (res && !editor.isDestroyed) {
             const same = JSON.stringify([readCrop(a.crop), shapeOf(a.shape).id, normRotate(a.rotate), !!a.flip]) === JSON.stringify([res.crop, res.shape, res.rotate, res.flip]);
-            if (!same) commit({ crop: res.crop, shape: res.shape, rotate: res.rotate, flip: res.flip });
+            if (!same) commit({ crop: res.crop, shape: res.shape, rotate: res.rotate, flip: res.flip }, true);
           }
         } finally {
           cropping = false;

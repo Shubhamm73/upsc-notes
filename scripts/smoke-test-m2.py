@@ -135,6 +135,9 @@ with sync_playwright() as p:
 
     # table
     slash(page, "table")
+    page.wait_for_selector("#table-dialog")  # 0.12: Insert → Table opens the size dialog (starts at 4 × 3)
+    page.click("#tbl-rows-minus")
+    page.click("#table-insert")
     check(ed.locator("table").count() == 1, "table inserted")
     check(page.locator(".tb-table").is_visible(), "table tools appear inside a table")
     page.click("button[aria-label='Add row below']")
