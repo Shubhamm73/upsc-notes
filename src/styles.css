@@ -1629,3 +1629,8 @@ button.danger-btn { background: var(--error); border-color: var(--error); color:
 .look-form select, .custom-theme select { max-width: 100%; min-width: 0; }
 .canvas:is([data-hset='pill'], [data-hset='tab'], [data-hset='boxed']) .section-heading { width: auto; }
 .canvas:is([data-hset='pill'], [data-hset='tab'], [data-hset='boxed']) .section-head .sec-menu-btn { margin-left: auto; }
+
+/* 0.15 Mark with the pen: the pen marks instead of scrolling while it is near the text (a finger still scrolls) */
+.ProseMirror[contenteditable='true'].pen-near { touch-action: none; }
+.rich .pen-mark { background: var(--mark); border-radius: 3px; }
+.rich .pen-unmark { background: var(--surface); text-decoration: line-through; text-decoration-color: var(--muted); border-radius: 3px; }

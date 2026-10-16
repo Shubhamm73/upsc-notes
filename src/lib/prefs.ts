@@ -1,5 +1,5 @@
 /**
- * Appearance preferences: theme, font style, width, outline, streak moments, sketch tools. They live in
+ * Appearance preferences: theme, font style, width, outline, streak moments, sketch tools, pen marking, haptics. They live in
  * localStorage (read before first paint, no flash). Since 0.11 (backup format 5) they also travel in the
  * backup: each one carries the time it was last chosen, and an import takes a setting only when the
  * file's choice is newer than this device's (a fresh tablet takes them all, an old file never undoes
@@ -36,6 +36,8 @@ const KEY_CELEBRATE = 'upsc.celebrate';
 const KEY_WIDTH = 'upsc.width';
 const KEY_OUTLINE = 'upsc.outline';
 const KEY_CUSTOM = 'upsc.custom';
+const KEY_PEN_MARK = 'upsc.penMark';
+const KEY_HAPTICS = 'upsc.haptics';
 
 /** Note width: the whole screen (default), or a comfortable reading column. PDFs are A4 either way. */
 export type PageWidth = 'full' | 'comfortable';
@@ -66,6 +68,8 @@ const SYNCED_KEYS: Record<string, { key: string; ok: (v: string) => boolean }> =
   width: { key: 'upsc.width', ok: (v) => v === 'full' || v === 'comfortable' },
   outline: { key: 'upsc.outline', ok: (v) => v === 'shown' || v === 'hidden' },
   celebrate: { key: 'upsc.celebrate', ok: (v) => v === 'on' || v === 'off' },
+  penMark: { key: KEY_PEN_MARK, ok: (v) => v === 'on' || v === 'off' },
+  haptics: { key: KEY_HAPTICS, ok: (v) => v === 'on' || v === 'off' },
   sketch: { key: 'upsc.sketch', ok: (v) => jsonObject(v) },
   lastFolder: { key: 'upsc.lastFolder', ok: (v) => v.length > 0 && v.length < 200 },
   drive: { key: 'upsc.drive', ok: (v) => jsonObject(v) }
@@ -232,6 +236,24 @@ export function celebrationsOn(): boolean {
 
 export function setCelebrations(on: boolean) {
   write(KEY_CELEBRATE, on ? 'on' : 'off');
+}
+
+/** S Pen drag over note text marks it (0.15). On unless switched off; off = the pen acts like a finger, as before. */
+export function penMarkOn(): boolean {
+  return read(KEY_PEN_MARK) !== 'off';
+}
+
+export function setPenMark(on: boolean) {
+  write(KEY_PEN_MARK, on ? 'on' : 'off');
+}
+
+/** A short vibration on pen marks, ratings, Mark reviewed and milestones (0.15). Off unless switched on. */
+export function hapticsOn(): boolean {
+  return read(KEY_HAPTICS) === 'on';
+}
+
+export function setHaptics(on: boolean) {
+  write(KEY_HAPTICS, on ? 'on' : 'off');
 }
 
 export function getPageWidth(): PageWidth {

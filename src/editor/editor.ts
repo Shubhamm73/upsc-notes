@@ -19,6 +19,7 @@ import { PictureFlow } from './flow';
 import { HeadingSetExt, LookHeading } from './heading-look';
 import { Panel, PanelColumn } from './panel';
 import { StyledTable, TableFigures } from './table';
+import { PenMark } from './pen-mark';
 
 /** The doc: blocks, and containers (0.12), which live only at the top level. */
 const PanelDoc = Document.extend({ content: '(block | panel)+' });
@@ -188,6 +189,7 @@ export function createEditor(opts: {
       PictureFlow,
       ActiveBlock,
       MarkSweep,
+      PenMark,
       ...(opts.slash ? [slashExtension(opts.slash)] : []),
       ...(opts.paste ? [pasteExtension(opts.paste)] : []),
       Placeholder.configure({ placeholder: opts.placeholder ?? 'Write here. Type / to add a list, table, chart or callout.' })

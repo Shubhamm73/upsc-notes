@@ -2,14 +2,14 @@
 
 Offline-first study-notes PWA for one UPSC aspirant (owner's brother) on a **Samsung Galaxy Tab S8**.
 Owner: Shubham (GitHub `Shubhamm73`). Live: https://shubhamm73.github.io/upsc-notes/ (GitHub Pages via Actions on push to `main`).
-Current version: **0.14.0 (Themes and templates, R6 of the six-asks plan; R1–R6 all done)**. Next: **UI-4 U4-2 Mark with the pen** (see the UI-4 plan in the roadmap; versions renumber from 0.15).
+Current version: **0.15.0 (UI-4 U4-2 Mark with the pen + optional haptics; R1–R6 all done)**. Next: **UI-4 U4-3 Speed pass (0.16)** (see the UI-4 plan in the roadmap).
 
 **Read this before doing anything: the work order is the "Six-asks plan" table below (R1–R6), then the rest of UI-4.** On 13 Oct 2026 the six-asks plan (UPSC Notes Redesign Plan artifact) recommended moving UI-4 after the six asks, but this file was written with the UI-4 plan instead, so 0.9.0 built Sketch and the next session started UI-4 step 2 again. The owner confirmed (13 Oct 2026, "go ahead with the recommended plan steps"): six asks first, every recommended decision, UI-4 U4-2…U4-4 after them. Sketch (0.9.0) stays.
 
 ## Non-negotiable rules
 - **Local-only data.** Notes, words, images live in IndexedDB (Dexie) on the device. No server storage, no accounts, no login. GitHub Pages serves code only. **Approved exception, built in 0.11 (R3)**: optional Google sign-in for backup only, files go from the tablet straight to his own Google Drive (`drive.file` scope); never any server of ours.
 - **Never lose data.** Autosave (~0.8 s debounce, flush on hide/pagehide), backup JSON (Downloads or share sheet → Google Drive), import merges by id keeping newer `updatedAt` and never deletes. Any schema change = new Dexie version with an `upgrade()` + map old data in `importBackup`.
-- **Touch-first**: targets ≥ 44 px (primary 56 px); works by touch alone; keyboard + S Pen optional extras.
+- **Touch-first**: targets ≥ 44 px (primary 56 px); works by touch alone; keyboard + S Pen optional extras (0.15: the S Pen marks text, switch in Settings → Pen & touch; a finger never marks).
 - **Motion ≤ 300 ms**, transform/opacity only, respect `prefers-reduced-motion`.
 - **English only.** Hindi and paper-grain texture were explicitly dropped by the owner.
 - Every phase: add a smoke test, run ALL smoke tests, bump `package.json` version (0.7, 0.8 …), commit, push, watch the Pages deploy.
@@ -30,7 +30,7 @@ src/views/folder-ui.ts breadcrumb, folder card grid, Edit mode (rename, red −,
 src/views/trash.ts     trash: restore, delete forever (type DELETE), empty trash
 src/views/settings.ts  Backup & storage (Google Drive section, backup file, PDF of everything, import)
 src/views/drive-ui.ts  Drive screens: connect (sign-in → folder → schedule → first backup), Back up now, Change schedule, restore list, Disconnect; Today's restore card; finishing a full-page sign-in
-src/views/appearance.ts Settings (#/prefs): theme tiles (system + 9 themes + Custom: accent, roundness, density) + 6 font styles
+src/views/appearance.ts Settings (#/prefs): theme tiles (system + 9 themes + Custom: accent, roundness, density) + 6 font styles + Pen & touch (Mark text with the S Pen, Vibrate on actions)
 src/views/more.ts      More menu;  src/views/search.ts  Ctrl+K overlay
 src/editor/            editor.ts (TipTap setup, dash-list attr, active-block + mark-sweep decorations, slash hook)
                        table.ts (styled table card, figure columns, resize), heading-look.ts, panel.ts (containers), look-tools.ts (Style panel, table dialog, size popover, container sheet)
@@ -38,11 +38,11 @@ src/editor/            editor.ts (TipTap setup, dash-list attr, active-block + m
                        insert.ts (insert items + list/block helpers), callout.ts (callout node, PYQ details), image-block.ts, images.ts
                        chart-block.ts, diagram-block.ts, mindmap-block.ts, mindmap-editor.ts (full-screen), gallery.ts (Insert → Chart), figure-kit.ts
                        paste.ts, flow.ts (text on every side of a picture), crop.ts (Crop & shape screen), history.ts (note-wide Undo/Redo),
-                       sketch-block.ts (Sketch node view: pen input, palm rejection, tools strip)
+                       sketch-block.ts (Sketch node view: pen input, palm rejection, tools strip), pen-mark.ts (S Pen drag = highlight, tap, long-press)
 src/pdf/               export.ts (section / note / all → pdfmake), run.ts
 src/lib/               drive-config (owner's public Google values), drive (GIS popup / full-page sign-in, token, Drive REST: folder, resumable upload, list, download, trash, Picker),
                        drive-backup (schedule, backup run, keep last 10 + guard, restore, next-tap renewal), changes ("big change" event),
-                       backup, storage (persist), dates (review intervals 1,3,7,16,35), insights (+ key lines with paragraph context), trash, prefs, activity (streak, milestones, last note),
+                       backup, storage (persist), dates (review intervals 1,3,7,16,35), insights (+ key lines with paragraph context), trash, prefs, activity (streak, milestones, last note), haptics (optional vibration),
                        schedule (steps, Again/Hard/Easy), cards (pure card sync, used by the Dexie upgrade), review (queue, session, rateItem, reviewNote), rings (subject rings),
                        folder-plan (pure: fixed folder ids, where a note/word shows, planFolders used by upgrade, launch and import), folders (FolderIndex, add/rename/reorder/delete, last subject used),
                        sheet (centred dialog), icons, h (DOM builder), doc (text, search text, word count, callouts, captions), callouts, templates (19 built-in, 5 groups), my-templates (Save as template, meta `templates`), note-look (cover, heading set, accent; defaults in meta `looks`), themes (9 + Custom, tokens), menu (popover),
@@ -60,11 +60,12 @@ Routes: `#/` Today · `#/review` (`/insights`, `/words`, `/notes`) · `#/notes` 
 npm ci
 npm run build                       # tsc + vite build
 npx vite preview --port 4173 &      # then:
-for t in smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2 smoke-test-ui3 smoke-test-paste smoke-test-canvas2 smoke-test-sketch smoke-test-share smoke-test-folders smoke-test-drive smoke-test-inline smoke-test-tables smoke-test-looks smoke-test-charts smoke-test-diagrams smoke-test-mindmap smoke-test-templates smoke-test-themes; do python3 scripts/$t.py; done
+for t in smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2 smoke-test-ui3 smoke-test-paste smoke-test-canvas2 smoke-test-sketch smoke-test-share smoke-test-folders smoke-test-drive smoke-test-inline smoke-test-tables smoke-test-looks smoke-test-charts smoke-test-diagrams smoke-test-mindmap smoke-test-templates smoke-test-themes smoke-test-penmark; do python3 scripts/$t.py; done
 scripts/run-suites.sh               # the same, starts/stops the preview itself, prints totals; LIVE=1 for the live site; on macOS adds scripts/linux-shim
 ```
 Python deps: playwright, pypdf, Pillow; `pdftotext` for the PDF test. In the cloud container pin `pip install playwright==1.56.0` (matches the pre-installed Chromium build 1194; newer pip versions look for a browser that isn't there).
-0.14.0 baseline: 22 suites, 1292 checks, all passing (smoke-test-templates adds 144, smoke-test-themes 107); upgrade test from 0.13.0 (73ff19d): 60 checks, all passing, 4 runs in a row. It now proves an old theme "night" is still Night, the update writes no look or template, the new build's backup is format 8 with theme, note look, template and look default (a fresh tablet takes all four), the 0.13 build refuses format 8 and stores nothing, and 0.13 opens a 0.14 note editable and an edit there keeps `note.look` byte-for-byte.
+0.15.0 baseline: 23 suites, 1344 checks, all passing (smoke-test-penmark adds 52); upgrade test from 0.14.0 (ec21eec): 60 checks, all passing, 4 runs in a row. It now proves the update writes neither new setting, a pen-made highlight is an ordinary highlight, the backup stays format 8 with both settings (a fresh tablet takes them), and 0.14 takes that file, stores the note byte-for-byte, ignores the two settings and edits the note keeping the mark.
+0.14.0 baseline was: 22 suites, 1292 checks, all passing (smoke-test-templates adds 144, smoke-test-themes 107); upgrade test from 0.13.0 (73ff19d): 60 checks, all passing, 4 runs in a row. It now proves an old theme "night" is still Night, the update writes no look or template, the new build's backup is format 8 with theme, note look, template and look default (a fresh tablet takes all four), the 0.13 build refuses format 8 and stores nothing, and 0.13 opens a 0.14 note editable and an edit there keeps `note.look` byte-for-byte.
 0.13.0 baseline was: 20 suites, 1041 checks, all passing (smoke-test-charts adds 57, smoke-test-diagrams 62, smoke-test-mindmap 68; ui3 +1: a selection made just before the highlight sweep ends is kept); upgrade test from 0.12.0 (33a36de): 56 checks, all passing, 4 runs in a row. It now proves the upgraded tablet's backup is format 7, and that the 0.12 build refuses a format-7 backup, stores nothing, and opens a 0.13 note read-only without changing it. The 0.12 worktree needs its own `npm ci` (Chart.js is no longer in our node_modules).
 0.12.0 baseline was: 17 suites, 853 checks, all passing (smoke-test-tables adds 68, smoke-test-looks 83); upgrade test from 0.11.0 (039257d): 56 checks, all passing, 4 runs in a row (from 0.10.0 (c1328e6): 53). It now also proves an upgraded tablet's backup is format 6 with no saved styles, and that the 0.11 build refuses a format-6 backup, stores nothing, and opens a 0.12 note read-only (its "newer version" notice in place of the section) without changing it.
 0.11.0 baseline was: 15 suites, 702 checks, all passing (smoke-test-drive adds 80, smoke-test-inline 26, canvas2 +1: a heading beside a picture, then ↓ Below picture); upgrade test from 0.10.0 (c1328e6): 52 checks, all passing, 4 runs in a row (from 0.9.1 (6f13571): 54). It now also proves his device settings survive the update, the upgraded tablet's format-5 backup carries them and every record (a fresh tablet takes both), and the old build refuses format 5 and stores nothing.
@@ -77,10 +78,10 @@ Python deps: playwright, pypdf, Pillow; `pdftotext` for the PDF test. In the clo
 **Upgrade test** (run it every release, and above all for any schema change): an installed previous release
 updates to this build on one browser profile, nothing lost, nothing rewritten. It starts/stops its own servers on 4173.
 ```
-git worktree add /tmp/prev <previous-release-commit> && cd /tmp/prev && ln -s <repo>/node_modules . && npm run build
-cd <repo> && npm run build && python3 scripts/upgrade-test.py /tmp/prev
+git worktree add <scratchpad>/prev <previous-release-commit> && cd <scratchpad>/prev && npm ci && npm run build
+cd <repo> && npm run build && PYTHONPATH=scripts/linux-shim UPSC_LINUX_SHIM=1 python3 scripts/upgrade-test.py <scratchpad>/prev   # shim on macOS only
 ```
-Stop a preview server with `fuser -k 4173/tcp`. Never `pkill -f "vite preview"`: the pattern matches the shell running it and kills that.
+Stop a preview server with `lsof -ti tcp:4173 -sTCP:LISTEN | xargs kill` (`fuser -k` doesn't work on macOS). Never `pkill -f "vite preview"`: the pattern matches the shell running it and kills that.
 The live site (shubhamm73.github.io) is on the cloud environment's allowed domains: after a deploy, run the suites against it
 by swapping `URL` to `https://shubhamm73.github.io/upsc-notes/`.
 
@@ -99,7 +100,7 @@ by swapping `URL` to `https://shubhamm73.github.io/upsc-notes/`.
 
 ## Known limits
 - PDF engine can't shape complex scripts (Hindi dropped anyway). PDF table columns are equal width unless dragged to widths on screen (then proportional).
-- Sketches: the eraser removes whole strokes (no partial rub-out); no pinch-zoom inside a sketch; beside the outline rail on the Tab S8 the sketch tools wrap to two rows. The S Pen hover / no-scroll behaviour, real pressure range and side-button reporting are emulated in tests and must be confirmed on the tablet.
+- Sketches: the eraser removes whole strokes (no partial rub-out); no pinch-zoom inside a sketch; beside the outline rail on the Tab S8 the sketch tools wrap to two rows. The S Pen hover / no-scroll behaviour, real pressure range and side-button reporting are emulated in tests and must be confirmed on the tablet. Same for Mark with the pen (0.15): the pen marking without scrolling, the side button and no system menu after a side-button stroke.
 - Text follows a picture's shape on screen only; the PDF wraps beside its box. Undo history is per open note (ends when the note closes).
 - Precache ≈ 3.07 MB (pdfmake + fonts; 0.13 dropped Chart.js but added its own chart, diagram and mind-map code).
 - Subject rings count notes only (reviewed and not overdue), so insight and word cards don't move them; the summary rings only change when a note card is rated.

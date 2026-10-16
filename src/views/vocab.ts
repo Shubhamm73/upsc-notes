@@ -11,6 +11,7 @@ import { celebrationsOn } from '../lib/prefs';
 import { h } from '../lib/h';
 import type { AppContext, View } from '../app';
 import { logReviewDay, milestoneText } from '../lib/activity';
+import { buzz } from '../lib/haptics';
 import { bigChange } from '../lib/changes';
 
 const CONTEXTS: VocabUse['context'][] = ['Essay', 'GS answer', 'Interview', 'Other'];
@@ -464,11 +465,13 @@ export function mountVocab(root: HTMLElement, ctx: AppContext): View {
     const reviewBtn = h('button', { type: 'button', class: 'primary', id: 'v-reviewed' }, 'Mark reviewed');
     reviewBtn.addEventListener('click', () => {
       rateRecord(d, 'easy'); // the same as Easy in a review session
+      buzz('reviewed');
       paintReview();
       dirty = true;
       void save();
       ctx.toast(`Next review ${prettyDate(d.nextReview)}`);
       void logReviewDay().then((day) => {
+        if (day.milestone) buzz('milestone');
         if (day.milestone && celebrationsOn()) ctx.toast(`Next review ${prettyDate(d.nextReview)}. ${milestoneText(day.milestone)}`);
       });
     });

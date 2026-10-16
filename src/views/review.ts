@@ -2,6 +2,7 @@ import type { Editor } from '@tiptap/core';
 import { db, type Note } from '../db';
 import { createEditor } from '../editor/editor';
 import { currentStreak, milestoneText } from '../lib/activity';
+import { buzz } from '../lib/haptics';
 import { prettyDate, ymd } from '../lib/dates';
 import { h } from '../lib/h';
 import { icon } from '../lib/icons';
@@ -409,6 +410,7 @@ export function mountReview(root: HTMLElement, ctx: AppContext): View {
       return;
     }
     saving = false;
+    buzz(res.milestone ? 'milestone' : 'rate');
     stopMotion();
     slideOut(r, fromX);
     ratings++;

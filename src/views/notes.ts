@@ -11,6 +11,7 @@ import { removeUnusedImages } from '../editor/images';
 import { runPdfExport } from '../pdf/run';
 import { extractInsights, groupInsights, sectionKeyLines } from '../lib/insights';
 import { logReviewDay, milestoneText, setLastNote } from '../lib/activity';
+import { buzz } from '../lib/haptics';
 import { reviewNote } from '../lib/review';
 import { ringOf } from '../lib/rings';
 import { FOLDER_COLOURS, subjectKeyOf } from '../lib/folder-plan';
@@ -1681,6 +1682,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       } finally {
         reviewBtn.disabled = false;
       }
+      buzz('reviewed');
       const count = d.insights?.items.length ?? 0;
       paintReview();
       paintInsights(true);
@@ -1689,6 +1691,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         : `Next review ${prettyDate(d.nextReview)}. Highlight key lines with Mark to get quick insights.`;
       ctx.toast(text);
       void logReviewDay().then((day) => {
+        if (day.milestone) buzz('milestone');
         if (day.milestone && celebrationsOn()) ctx.toast(`${text} ${milestoneText(day.milestone)}`);
       });
       if (!count) return;

@@ -1,5 +1,5 @@
 import { h } from '../lib/h';
-import { celebrationsOn, FONT_STYLES, getCustom, getFontStyle, getPageWidth, getTheme, setCelebrations, setCustom, setFontStyle, setPageWidth, setTheme, type PageWidth, type ThemePref } from '../lib/prefs';
+import { celebrationsOn, FONT_STYLES, hapticsOn, penMarkOn, setHaptics, setPenMark, getCustom, getFontStyle, getPageWidth, getTheme, setCelebrations, setCustom, setFontStyle, setPageWidth, setTheme, type PageWidth, type ThemePref } from '../lib/prefs';
 import { CUSTOM_ACCENTS, DENSITIES, fitAccent, themeOf, THEMES, tokensFor, type CustomTheme, type ThemeId } from '../lib/themes';
 import type { AppContext, View } from '../app';
 
@@ -126,6 +126,24 @@ export function mountAppearance(root: HTMLElement, ctx: AppContext): View {
     ctx.toast(celebrate.checked ? 'Streak moments are on.' : 'Streak moments are off. The streak still counts.');
   });
 
+  const penMark = h('input', { type: 'checkbox', id: 'pref-penmark', checked: penMarkOn() });
+  penMark.addEventListener('change', () => {
+    setPenMark(penMark.checked);
+    ctx.toast(penMark.checked ? 'The S Pen now marks text.' : 'The S Pen now works like a finger on text. Sketches still draw.');
+  });
+  const haptics = h('input', { type: 'checkbox', id: 'pref-haptics', checked: hapticsOn() });
+  haptics.addEventListener('change', () => {
+    setHaptics(haptics.checked);
+    if (haptics.checked) {
+      try {
+        navigator.vibrate?.(12);
+      } catch {
+        /* no vibration on this device */
+      }
+    }
+    ctx.toast(haptics.checked ? 'A short buzz on pen marks, ratings, Mark reviewed and milestones.' : 'No vibration.');
+  });
+
   root.replaceChildren(
     h(
       'div',
@@ -152,6 +170,15 @@ export function mountAppearance(root: HTMLElement, ctx: AppContext): View {
         h('h2', {}, 'Review'),
         h('label', { class: 'check', for: 'pref-celebrate' }, celebrate, 'Streak moments at 7, 30 and 100 days'),
         h('p', { class: 'meta' }, 'A quiet line in the session summary when your streak reaches one of these. No sounds, no pop-ups.')
+      ),
+      h(
+        'section',
+        { class: 'card-block', id: 'pen-block' },
+        h('h2', {}, 'Pen & touch'),
+        h('label', { class: 'check', for: 'pref-penmark' }, penMark, 'Mark text with the S Pen'),
+        h('p', { class: 'meta' }, 'Draw over words to highlight them; go over them again, or hold the side button, to remove it. Tap for the cursor, hold to select a word. A finger works as before.'),
+        h('label', { class: 'check', for: 'pref-haptics' }, haptics, 'Vibrate on actions'),
+        h('p', { class: 'meta' }, 'A very short buzz when you mark with the pen, rate a card, Mark reviewed, or reach a streak milestone.')
       )
     )
   );

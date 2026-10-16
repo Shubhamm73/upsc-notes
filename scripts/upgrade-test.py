@@ -29,6 +29,11 @@ the server to the NEW build, check the "new version" banner, tap Reload now, the
   build's backup is format 8 with the theme, the note's look, the template and the look default and a fresh
   tablet takes all four, the old build refuses a format-8 backup and stores nothing, and a 0.14 note with a
   look opens in the old build editable (no new nodes), and an edit made there keeps note.look byte-for-byte.
+- 0.15 (Mark with the pen, haptics; no schema or format change): the update writes neither new setting; a
+  highlight made with the S Pen in the new build is an ordinary highlight; its backup is still format 8 with
+  "Mark text with the S Pen" off and "Vibrate" on, a fresh tablet takes both, and the old build takes the
+  file (same format), stores the note byte-for-byte, ignores the two settings it doesn't know, and opens
+  the note editable with the mark (an edit there keeps it).
 
 Usage (port 4173 must be free; the script starts and stops the servers itself):
   git worktree add /tmp/prev <previous-release-commit> && cd /tmp/prev && ln -s <repo>/node_modules . && npm run build
@@ -66,8 +71,13 @@ def check(cond, msg):
         failures.append(msg)
 
 
+def stop_preview():
+    # never `pkill -f "vite preview"`: the pattern matches the shell running it
+    subprocess.run("lsof -ti tcp:4173 -sTCP:LISTEN | xargs kill", shell=True, capture_output=True)
+
+
 def serve(d):
-    subprocess.run(["fuser", "-k", "4173/tcp"], capture_output=True)
+    stop_preview()
     time.sleep(1)
     subprocess.Popen(["npx", "vite", "preview", "--port", "4173", "--strictPort"], cwd=d, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(3)
@@ -318,6 +328,9 @@ try:
             check(page.evaluate("document.documentElement.dataset.theme") == "night" and bg == "#111519", f"0.14: his old theme \"night\" is still Night ({bg})")
             check(not any("look" in n for n in new["notes"]) and not any(m.get("key") in ("templates", "looks") for m in new["meta"]),
                   "0.14: the update writes no note look, template or look default")
+        if ver(new_v) >= (0, 15, 0):
+            check(page.evaluate("[localStorage.getItem('upsc.penMark'), localStorage.getItem('upsc.haptics')]") == [None, None],
+                  "0.15: the update writes neither pen marking nor haptics (pen marking on, vibration off by default)")
         check(mine(new["notes"]).get("insights") == mine(before).get("insights"), "quick insights unchanged")
         if ver(new_v) >= (0, 8, 0):
             check(page.evaluate(DB_VERSION) == (40 if ver(new_v) >= (0, 10, 0) else 30), f"database upgraded to Dexie v{page.evaluate(DB_VERSION) // 10}")
@@ -778,11 +791,86 @@ try:
             check(kept is not None and "edited in the old build" in json.dumps(kept["sections"]) and kept["updatedAt"] > looked["updatedAt"], f"{old_v} saves the edit")
             check(kept is not None and json.dumps(kept.get("look")) == json.dumps(looked["look"]), f"…and keeps note.look byte-for-byte ({kept and kept.get('look')})")
             back.close()
+        elif ver(new_v) >= (0, 15, 0) and ver(old_v) < (0, 15, 0):
+            # ---- 0.15: a highlight made with the S Pen, and the two new settings, written by the new build ----
+            cdp = fresh.context.new_cdp_session(fresh)
+            fresh.goto(URL + "#/n/new/blank")
+            fresh.wait_for_selector("#f-title")
+            fresh.fill("#f-title", "Pen in the new build")
+            fresh.locator(".section-body .rich").first.click()
+            fresh.keyboard.type("Rivers of the Deccan plateau flow east.")
+            fresh.wait_for_timeout(300)
+            WORD = """(w) => { const root = document.querySelector('.section-body .rich'); const t = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+                let n; while ((n = t.nextNode())) { const i = n.data.indexOf(w); if (i >= 0) { const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + w.length);
+                const b = r.getClientRects()[0]; return [b.left + b.width / 2, b.top + b.height / 2]; } } return null; }"""
+            (x0, y0), (x1, y1) = fresh.evaluate(WORD, "Deccan"), fresh.evaluate(WORD, "flow")
+            pen = {"pointerType": "pen", "button": "left", "clickCount": 1}
+            cdp.send("Input.dispatchMouseEvent", {**pen, "type": "mouseMoved", "x": x0, "y": y0, "button": "none", "buttons": 0})
+            cdp.send("Input.dispatchMouseEvent", {**pen, "type": "mousePressed", "x": x0, "y": y0, "force": 0.5, "buttons": 1})
+            for i in range(1, 9):
+                cdp.send("Input.dispatchMouseEvent", {**pen, "type": "mouseMoved", "x": x0 + (x1 - x0) * i / 8, "y": y0, "force": 0.5, "buttons": 1})
+            cdp.send("Input.dispatchMouseEvent", {**pen, "type": "mouseReleased", "x": x1, "y": y0, "buttons": 0})
+            fresh.wait_for_timeout(1000)
+            expect(fresh.locator("#save-state")).to_have_attribute("data-state", "saved", timeout=5000)
+            fresh.goto(URL + "#/prefs")
+            fresh.wait_for_selector("#pref-penmark")
+            fresh.click("label[for='pref-penmark']")
+            fresh.click("label[for='pref-haptics']")
+            fresh.goto(URL + "#/settings")
+            with fresh.expect_download() as dl:
+                fresh.click("#backup-download")
+            newer = os.path.join(profile + "-files", "new-backup.json")
+            dl.value.save_as(newer)
+            nb = json.loads(open(newer).read())
+            penned = next(n for n in nb["notes"] if n["title"] == "Pen in the new build")
+            nsv = {k: v["value"] for k, v in nb.get("settings", {}).items()}
+            runs = [(t["text"], [m["type"] for m in t.get("marks", [])]) for sec in penned["sections"] for b in sec["doc"]["content"] for t in b.get("content", [])]
+            check(runs == [("Rivers of the ", []), ("Deccan plateau flow", ["highlight"]), (" east.", [])],
+                  f"a highlight made with the S Pen is an ordinary highlight, whole words ({runs})")
+            check(nb["format"] == 8 and nsv.get("penMark") == "off" and nsv.get("haptics") == "on",
+                  f"the new build's backup is still format 8 and carries both new settings ({nb['format']}, {nsv.get('penMark')}, {nsv.get('haptics')})")
+            fresh3 = fresh_browser.new_page()
+            fresh3.goto(URL + "#/settings")
+            fresh3.wait_for_selector("#import-file", state="attached")
+            fresh3.set_input_files("#import-file", newer)
+            expect(fresh3.locator(".import-result")).to_contain_text("Imported:", timeout=60000)
+            got3 = next((n for n in fresh3.evaluate(ALL_NOTES) if n["id"] == penned["id"]), None)
+            check(got3 is not None and got3["sections"] == penned["sections"]
+                  and fresh3.evaluate("[localStorage.getItem('upsc.penMark'), localStorage.getItem('upsc.haptics')]") == ["off", "on"],
+                  "a fresh tablet takes the pen-marked note and both settings")
+            fresh3.close()
+            fresh_browser.close()
+            serve(OLD)
+            back = p.chromium.launch()
+            oldpage = back.new_page()
+            oldpage.on("pageerror", lambda e: errors.append(str(e)))
+            oldpage.goto(URL + "#/settings")
+            oldpage.wait_for_selector("#import-file", state="attached")
+            oldpage.set_input_files("#import-file", newer)
+            expect(oldpage.locator(".import-result")).to_contain_text("Imported:", timeout=60000)
+            kept = next((n for n in oldpage.evaluate(ALL_NOTES) if n["id"] == penned["id"]), None)
+            check(kept is not None and kept["sections"] == penned["sections"] and kept["updatedAt"] == penned["updatedAt"],
+                  f"{old_v} takes a {new_v} backup (same format) and stores the pen-marked note byte-for-byte")
+            check(oldpage.evaluate("[localStorage.getItem('upsc.penMark'), localStorage.getItem('upsc.haptics')]") == [None, None],
+                  f"{old_v} ignores the two settings it doesn't know")
+            oldpage.goto(URL + "#/n/" + penned["id"])
+            oldpage.wait_for_selector(".section-body .ProseMirror mark")
+            oldpage.wait_for_timeout(1000)
+            check(oldpage.locator(".section-body .ProseMirror").first.get_attribute("contenteditable") == "true"
+                  and oldpage.locator(".section-body mark").all_inner_texts() == ["Deccan plateau flow"], f"{old_v} opens it editable with the mark")
+            oldpage.locator(".section-body .ProseMirror > p").last.click()
+            oldpage.keyboard.press("End")
+            oldpage.keyboard.type(" Edited in the old build.")
+            expect(oldpage.locator("#save-state")).to_have_attribute("data-state", "saved", timeout=5000)
+            kept = next((n for n in oldpage.evaluate(ALL_NOTES) if n["id"] == penned["id"]), None)
+            check(kept is not None and "Edited in the old build" in json.dumps(kept["sections"]) and '"Deccan plateau flow"' in json.dumps(kept["sections"]),
+                  f"{old_v} saves an edit and keeps the mark")
+            back.close()
         else:
             fresh_browser.close()
         check(not errors, f"no page errors after import {errors}")
 finally:
-    subprocess.run(["fuser", "-k", "4173/tcp"], capture_output=True)
+    stop_preview()
     shutil.rmtree(profile, ignore_errors=True)
     shutil.rmtree(profile + "-files", ignore_errors=True)
 sys.exit(1 if failures else 0)
