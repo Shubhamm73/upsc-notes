@@ -167,7 +167,7 @@ const figureFoot = (f: Figure, alignment: string): Content[] => (f.source ? [{ t
 
 function figureBlock(n: DocNode, ctx: Ctx): Content {
   const f = figureOf(n, ctx)!;
-  const side = n.type !== 'diagram' && n.type !== 'mindMap' && (n.attrs?.align === 'left' || n.attrs?.align === 'right') ? String(n.attrs.align) : null;
+  const side = n.attrs?.align === 'left' || n.attrs?.align === 'right' ? String(n.attrs.align) : null;
   const pct = Math.min(100, Math.max(20, Number(n.attrs?.width ?? 50)));
   const alignment = side ?? 'left';
   const big = n.type === 'mindMap' && ((n.attrs?.nodes as unknown[] | undefined)?.length ?? 0) > 30;
@@ -183,6 +183,9 @@ function figureBlock(n: DocNode, ctx: Ctx): Content {
     } as Content;
   }
   let w = side ? (ctx.width * pct) / 100 : Math.min(ctx.width, n.type === 'mindMap' ? f.w * 0.8 : f.w * 0.9, CONTENT_W);
+  // 0.16: a centred figure made narrower on screen prints at that share of the column
+  const own = Number(n.attrs?.width);
+  if (!side && own > 0 && own < 100) w = Math.min(w, (ctx.width * own) / 100);
   // keep within one page
   if ((w * f.h) / f.w > 600) w = (600 * f.w) / f.h;
   return { stack: [...figureHead(f, alignment), { svg: f.svg, width: w, height: (w * f.h) / f.w, alignment }, ...figureFoot(f, alignment)], unbreakable: true, margin: [0, 4, 0, 10] };
@@ -323,7 +326,7 @@ function blocks(nodes: DocNode[] | undefined, ctx: Ctx): Content[] {
     const n = list[i];
     const align = n.attrs?.align;
     const floated = (align === 'left' || align === 'right') && wraps(list[i + 1]);
-    const fig = floated && (n.type === 'chartBlock' || n.type === 'chart') ? figureOf(n, ctx) : null;
+    const fig = floated && ['chartBlock', 'chart', 'diagram', 'mindMap'].includes(n.type) ? figureOf(n, ctx) : null;
     const img: Pic | undefined = fig ? { url: '', w: fig.w, h: fig.h } : floated ? pictureOf(n, ctx) : undefined;
     // A left/right picture, sketch or chart with text after it prints side by side with that text, as on
     // screen: the text blocks that fit next to the picture's height go in the column beside it.

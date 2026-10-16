@@ -270,8 +270,9 @@ with sync_playwright() as p:
         page.evaluate(f"localStorage.setItem('upsc.theme', '{t}')")
         page.reload()
         page.wait_for_selector(".section-heading")
-        col = page.evaluate("getComputedStyle(document.querySelector('.section-heading')).color")
-        r = ratio(page, col, "var(--bg)")
+        cs = page.evaluate("(() => { const s = getComputedStyle(document.querySelector('.section-heading')); return [s.color, s.backgroundColor]; })()")
+        # banner = solid ribbon: the title sits on its own fill, not the page
+        r = ratio(page, cs[0], cs[1] if cs[1] not in ("rgba(0, 0, 0, 0)", "transparent") else "var(--bg)")
         check(r >= (7 if t == "contrast" else 4.5), f"{t}: section titles read in a note look ({r:.2f}:1)")
         page.screenshot(path=str(OUT / f"note-{t}.png"))
     page.evaluate("localStorage.setItem('upsc.theme', 'day')")

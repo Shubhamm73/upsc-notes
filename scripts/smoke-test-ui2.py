@@ -154,7 +154,7 @@ with sync_playwright() as p:
     page.keyboard.type("/")
     page.wait_for_selector("#insert-menu:not([hidden])")
     items = page.eval_on_selector_all(".insert-opt strong", "e => e.map(x => x.textContent)")
-    check(items == ["Heading", "Bullet list", "Dash list", "Numbered list", "Table", "Chart", "Diagram", "Mind map", "Image", "Sketch", "Container", "Callout", "Divider"], f"slash menu items ({items})")
+    check(items == ["Heading", "Bullet list", "Dash list", "Numbered list", "Table", "Chart", "Image", "Sketch", "Container", "Callout", "Divider"], f"slash menu items ({items})")
     page.keyboard.type("tab")
     check(page.locator(".insert-opt").first.inner_text().startswith("Table"), "slash menu filters as you type")
     page.keyboard.press("Escape")

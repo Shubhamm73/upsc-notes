@@ -3,7 +3,7 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import { h } from '../lib/h';
 import { readMindMap, renderMindMap, sampleMindMap, Tree, type MindMap } from '../lib/mindmap';
 import { screenInk } from '../lib/svg-ink';
-import { onInkChange, reducedMotion } from './figure-kit';
+import { onInkChange, placeFigure, reducedMotion, sizeGrip } from './figure-kit';
 import { openMindMapEditor } from './mindmap-editor';
 
 /**
@@ -24,6 +24,16 @@ function mindMapView({ node, getPos, editor }: { node: PMNode; getPos: (() => nu
   const head = h('div', { class: 'chart-head' }, h('div', { class: 'chart-titles' }, titleEl, countEl), editBtn);
   const canvas = h('div', { class: 'chart-canvas mindmap-canvas' });
   fig.append(head, canvas);
+  // 0.16: any width, left / right with text beside it, like a picture
+  const place = (n: PMNode) => placeFigure(fig, n.attrs.align, n.attrs.width);
+  place(node);
+  const grip = sizeGrip(fig, 'Drag to resize mind map', () => current.attrs, (pct) => {
+    const pos = typeof getPos === 'function' ? getPos() : undefined;
+    if (pos !== undefined && pct !== current.attrs.width) editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...current.attrs, width: pct }));
+    else place(current);
+  });
+  fig.append(grip.handle, grip.tag);
+  place(node);
 
   const draw = (force = false) => {
     const m = readMindMap(current.attrs);
@@ -64,6 +74,7 @@ function mindMapView({ node, getPos, editor }: { node: PMNode; getPos: (() => nu
     update(n: PMNode) {
       if (n.type !== current.type) return false;
       current = n;
+      place(n);
       draw();
       return true;
     },
@@ -74,7 +85,7 @@ function mindMapView({ node, getPos, editor }: { node: PMNode; getPos: (() => nu
       fig.classList.remove('is-selected');
     },
     stopEvent(e: Event) {
-      return e.target === editBtn;
+      return e.target === editBtn || e.target === grip.handle;
     },
     ignoreMutation() {
       return true;
@@ -94,7 +105,10 @@ export const MindMapNode = Node.create({
   addAttributes() {
     return {
       layout: { default: 'radial' },
-      nodes: { default: [] }
+      nodes: { default: [] },
+      // 0.16: left / right float it with text beside it; width in % of the column
+      align: { default: 'center', rendered: false },
+      width: { default: 100, rendered: false }
     };
   },
   parseHTML: () => [

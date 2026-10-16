@@ -4,7 +4,7 @@ import { NodeSelection } from '@tiptap/pm/state';
 import { h } from '../lib/h';
 import { CHART_KINDS, chartKindName, isXY, oneSeries, readChartData, renderChart, sampleChart, type ChartData, type ChartKind } from '../lib/charts';
 import { deskColours, screenInk } from '../lib/svg-ink';
-import { onInkChange, palettePicker, panelBtn, reducedMotion, segmented, tipper } from './figure-kit';
+import { onInkChange, palettePicker, panelBtn, placeFigure, reducedMotion, segmented, sizeGrip, tipper } from './figure-kit';
 
 /**
  * Charts. Since 0.13 every chart is a `chart` node: twelve kinds, a palette, a subtitle and a source,
@@ -40,11 +40,15 @@ function chartView(legacy: boolean) {
     fig.append(head, canvas, legendEl, foot, panel);
     const tips = tipper(fig, canvas);
 
-    const place = (n: PMNode) => {
-      const align = ['left', 'right'].includes(n.attrs.align) ? n.attrs.align : 'center';
-      fig.dataset.align = align;
-      fig.style.width = align === 'center' ? '' : `${Math.min(100, Math.max(20, Number(n.attrs.width) || 50))}%`;
-    };
+    const place = (n: PMNode) => placeFigure(fig, n.attrs.align, n.attrs.width);
+    place(node);
+    // 0.16: drag the corner to any width, centred or beside text
+    const grip = sizeGrip(fig, 'Drag to resize chart', () => current.attrs, (pct) => {
+      const pos = typeof getPos === 'function' ? getPos() : undefined;
+      if (pos !== undefined && pct !== current.attrs.width) editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...current.attrs, width: pct }));
+      else place(current);
+    });
+    fig.append(grip.handle, grip.tag);
     place(node);
     const data = () => working ?? readChartData(current.attrs, legacy);
 
@@ -238,7 +242,7 @@ function chartView(legacy: boolean) {
       },
       stopEvent(e: Event) {
         const t = e.target as HTMLElement | null;
-        return !!t && (panel.contains(t) || t === editBtn || legendEl.contains(t));
+        return !!t && (panel.contains(t) || t === editBtn || legendEl.contains(t) || t === grip.handle);
       },
       ignoreMutation() {
         return true;

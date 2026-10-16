@@ -7,6 +7,7 @@ import { addColumn, addRow, removeColumn, removeRow, TableMap } from '@tiptap/pm
 import { closeHistory } from '@tiptap/pm/history';
 import { Transform } from '@tiptap/pm/transform';
 import { colourKey, figureColumns, tableStyle, TABLE_MAX_COLS, TABLE_MAX_ROWS, type TableStyle } from '../lib/looks';
+import { figAlign, figWidth, placeFigure, sizeGrip, type FigAlign } from './figure-kit';
 
 /**
  * Tables (0.12) sit on a raised card with a style (Clean, Banded, Lined, Boxed, Minimal), a colour (null
@@ -25,6 +26,7 @@ const text = (name: string) => ({
 class CardTableView extends TableView {
   card: HTMLDivElement;
   cap: HTMLDivElement;
+  grip: HTMLButtonElement;
   constructor(node: PMNode, cellMinWidth: number, view?: EditorView) {
     super(node, cellMinWidth, view);
     this.card = document.createElement('div');
@@ -32,12 +34,35 @@ class CardTableView extends TableView {
     this.cap = document.createElement('div');
     this.cap.className = 'table-cap';
     this.cap.contentEditable = 'false';
-    this.card.append(this.cap, this.dom);
+    // 0.16: drag the corner to any width; left / right put text beside the table
+    const grip = sizeGrip(this.card, 'Drag to resize table', () => ({ align: this.node.attrs.align, width: this.node.attrs.width }), (pct) => {
+      const v = view;
+      if (!v) return;
+      let at = -1;
+      v.state.doc.descendants((n, pos) => {
+        if (at >= 0) return false;
+        if (n === this.node) at = pos;
+        return at < 0;
+      });
+      if (at >= 0 && pct !== this.node.attrs.width) v.dispatch(v.state.tr.setNodeMarkup(at, undefined, { ...this.node.attrs, width: pct >= 100 ? null : pct }));
+      else this.paint(this.node);
+    });
+    this.grip = grip.handle;
+    this.card.append(this.cap, this.dom, grip.handle, grip.tag);
     this.dom = this.card;
     this.paint(node);
   }
+  ignoreMutation(record: Parameters<TableView['ignoreMutation']>[0]) {
+    if ((record.target as Node) === this.grip || this.grip.contains(record.target as Node) || (record.target as HTMLElement).classList?.contains('fig-size')) return true;
+    if (record.type === 'attributes' && record.target === this.card) return true;
+    return super.ignoreMutation(record);
+  }
+  stopEvent(e: Event) {
+    return e.target === this.grip;
+  }
   paint(node: PMNode) {
     const a = node.attrs;
+    placeFigure(this.card, a.align, a.width);
     this.card.dataset.tstyle = tableStyle(a.tstyle);
     const c = colourKey(a.color);
     if (c) this.card.style.setProperty('--tc', `var(--sub-${c})`);
@@ -64,6 +89,17 @@ export const StyledTable = Table.extend({
       tstyle: text('tstyle'),
       color: text('color'),
       caption: text('caption'),
+      // 0.16: left / right float the table with text beside it; width in % of the column (null: full)
+      align: {
+        default: null,
+        parseHTML: (el: HTMLElement) => (['left', 'right'].includes(el.getAttribute('data-align') ?? '') ? el.getAttribute('data-align') : null),
+        renderHTML: (a: { align?: string | null }) => (a.align === 'left' || a.align === 'right' ? { 'data-align': a.align } : {})
+      },
+      width: {
+        default: null,
+        parseHTML: (el: HTMLElement) => Number(el.getAttribute('data-width')) || null,
+        renderHTML: (a: { width?: number | null }) => (a.width ? { 'data-width': String(a.width) } : {})
+      },
       firstCol: {
         default: null,
         parseHTML: (el: HTMLElement) => (el.getAttribute('data-first-col') === 'bold' ? true : null),
@@ -257,4 +293,14 @@ function findTableBefore(tr: Transaction): { pos: number; node: PMNode } | null 
   const $p = tr.selection.$from;
   for (let d = $p.depth; d > 0; d--) if ($p.node(d).type.name === 'table') return { pos: $p.before(d), node: $p.node(d) };
   return null;
+}
+
+/** Puts the caret's table on the left or right with text beside it, or back in the middle. One Undo step. */
+export function setTableAlign(editor: Editor, align: FigAlign): boolean {
+  const t = tableAt(editor);
+  if (!t) return false;
+  const a = t.node.attrs;
+  const width = align === 'center' ? (a.width ?? null) : Math.min(figWidth(a.width, figAlign(a.align)), 60);
+  editor.view.dispatch(closeHistory(editor.state.tr.setNodeMarkup(t.pos, undefined, { ...a, align: align === 'center' ? null : align, width: align !== 'center' && width >= 100 ? 50 : width })));
+  return true;
 }

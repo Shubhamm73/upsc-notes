@@ -15,7 +15,7 @@ import { openPopover } from '../lib/menu';
 import { readHeadingLook } from '../lib/looks';
 import { headingAt } from './heading-look';
 import { panelAt, removePanel } from './panel';
-import { tableAt, tableSize } from './table';
+import { setTableAlign, tableAt, tableSize } from './table';
 import { askSaveStyle, closeSizePopover, createLookPanel, hasLastHeading, openContainerSheet, openSizePopover, sameAsLastHeading } from './look-tools';
 
 export const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -453,7 +453,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     return s instanceof NodeSelection && (name ? s.node.type.name === name : ['imageBlock', 'chartBlock', 'chart', 'sketchBlock', 'diagram', 'mindMap'].includes(s.node.type.name));
   };
   /** A selected picture, sketch or chart (0.11): they float with text beside them. Pictures and sketches take a caption. */
-  const FLOATS = ['imageBlock', 'sketchBlock', 'chartBlock', 'chart'];
+  const FLOATS = ['imageBlock', 'sketchBlock', 'chartBlock', 'chart', 'diagram', 'mindMap'];
   const selectedFloat = (e: Editor) => {
     const s = e.state.selection;
     return s instanceof NodeSelection && FLOATS.includes(s.node.type.name) ? s : null;
@@ -530,7 +530,10 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     btn('− Row', 'Delete row', (e) => e.chain().focus().deleteRow().run(), 'tb'),
     btn('− Column', 'Delete column', (e) => e.chain().focus().deleteColumn().run(), 'tb'),
     btn('Header row', 'Turn header row on or off', (e) => e.chain().focus().toggleHeaderRow().run(), 'tb'),
-    btn('Fit width', 'Fit the table to the page width', (e) => fitTable(e), 'tb', undefined, (e) => !!tableAt(e) && hasColWidths(tableAt(e)!.node)),
+    btn('Left · text beside', 'Table on the left, text beside it', (e) => setTableAlign(e, 'left'), 'tb', (e) => tableAt(e)?.node.attrs.align === 'left'),
+    btn('Center', 'Table in the middle', (e) => setTableAlign(e, 'center'), 'tb', (e) => !!tableAt(e) && !['left', 'right'].includes(tableAt(e)!.node.attrs.align)),
+    btn('Right · text beside', 'Table on the right, text beside it', (e) => setTableAlign(e, 'right'), 'tb', (e) => tableAt(e)?.node.attrs.align === 'right'),
+    btn('Fit width', 'Fit the table to the page width', (e) => fitTable(e), 'tb', undefined, (e) => !!tableAt(e) && (hasColWidths(tableAt(e)!.node) || !!tableAt(e)!.node.attrs.width)),
     btn('Delete table', 'Delete table', (e) => e.chain().focus().deleteTable().run(), 'tb danger')
   );
   const hasColWidths = (table: PMNode) => {
@@ -549,6 +552,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     t.node.descendants((n, pos) => {
       if (n.attrs.colwidth) tr.setNodeMarkup(t.pos + 1 + pos, undefined, { ...n.attrs, colwidth: null });
     });
+    if (t.node.attrs.width) tr.setNodeMarkup(t.pos, undefined, { ...tr.doc.nodeAt(t.pos)!.attrs, width: null });
     e.view.dispatch(tr);
   };
 
@@ -704,7 +708,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
   function openInsert(anchor: DOMRect) {
     const e = editor;
     if (!e) return;
-    const items = [...INSERT_ITEMS.filter((i) => !i.plusOnly || i.plusOnly(e))];
+    const items = [...INSERT_ITEMS.filter((i) => !i.searchOnly && (!i.plusOnly || i.plusOnly(e)))];
     showMenu(items, 'pick', e, anchor, true);
   }
 
@@ -729,11 +733,11 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
       const float = selectedFloat(e);
       imageOps.hidden = !float;
       const type = float?.node.type.name;
-      const label = type === 'sketchBlock' ? 'Sketch' : type === 'chartBlock' || type === 'chart' ? 'Chart' : 'Image';
+      const label = type === 'sketchBlock' ? 'Sketch' : type === 'chartBlock' || type === 'chart' ? 'Chart' : type === 'diagram' ? 'Diagram' : type === 'mindMap' ? 'Mind map' : 'Image';
       imageLabel.textContent = label;
       imageOps.setAttribute('aria-label', label);
       cropBtn.hidden = type !== 'imageBlock';
-      captionInput.hidden = type === 'chartBlock' || type === 'chart'; // a chart has its own title
+      captionInput.hidden = type === 'chartBlock' || type === 'chart' || type === 'diagram' || type === 'mindMap'; // these have their own title
       blockOps.hidden = !selectedBlock(e);
       const kind = calloutKindAt(e);
       calloutOps.hidden = !kind;

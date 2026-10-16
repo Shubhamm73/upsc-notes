@@ -3,7 +3,7 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import { h } from '../lib/h';
 import { DIAGRAM_KINDS, diagramKindName, ITEM_WORDS, readDiagram, renderDiagram, sampleDiagram, treeLevels, type DiagramData, type DiagramItem, type DiagramKind } from '../lib/diagrams';
 import { deskColours, screenInk } from '../lib/svg-ink';
-import { colourSelect, onInkChange, palettePicker, panelBtn, reducedMotion } from './figure-kit';
+import { colourSelect, onInkChange, palettePicker, panelBtn, placeFigure, reducedMotion, sizeGrip } from './figure-kit';
 
 /**
  * Diagrams "from words" (0.13): { type: 'diagram', attrs: { kind, title, items, heads, note, palette } }.
@@ -27,6 +27,16 @@ function diagramView({ node, getPos, editor }: { node: PMNode; getPos: (() => nu
   const panel = h('div', { class: 'chart-panel diagram-panel', hidden: true });
   fig.append(head, canvas, panel);
   const data = () => working ?? readDiagram(current.attrs);
+  // 0.16: any width, left / right with text beside it, like a picture
+  const place = (n: PMNode) => placeFigure(fig, n.attrs.align, n.attrs.width);
+  place(node);
+  const grip = sizeGrip(fig, 'Drag to resize diagram', () => current.attrs, (pct) => {
+    const pos = typeof getPos === 'function' ? getPos() : undefined;
+    if (pos !== undefined && pct !== current.attrs.width) editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...current.attrs, width: pct }));
+    else place(current);
+  });
+  fig.append(grip.handle, grip.tag);
+  place(node);
 
   const draw = (force = false) => {
     const d = data();
@@ -158,6 +168,7 @@ function diagramView({ node, getPos, editor }: { node: PMNode; getPos: (() => nu
     update(n: PMNode) {
       if (n.type !== current.type) return false;
       current = n;
+      place(n);
       draw();
       return true;
     },
@@ -169,7 +180,7 @@ function diagramView({ node, getPos, editor }: { node: PMNode; getPos: (() => nu
     },
     stopEvent(e: Event) {
       const t = e.target as HTMLElement | null;
-      return !!t && (panel.contains(t) || t === editBtn);
+      return !!t && (panel.contains(t) || t === editBtn || t === grip.handle);
     },
     ignoreMutation() {
       return true;
@@ -193,7 +204,10 @@ export const DiagramNode = Node.create({
       items: { default: [] },
       heads: { default: [] },
       note: { default: '' },
-      palette: { default: 'desk' }
+      palette: { default: 'desk' },
+      // 0.16: left / right float it with text beside it; width in % of the column
+      align: { default: 'center', rendered: false },
+      width: { default: 100, rendered: false }
     };
   },
   parseHTML: () => [

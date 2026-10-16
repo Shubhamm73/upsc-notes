@@ -101,3 +101,66 @@ export function panelBtn(text: string, fn: () => void, cls = '', aria?: string):
   b.addEventListener('click', fn);
   return b;
 }
+
+export type FigAlign = 'left' | 'center' | 'right';
+export const figAlign = (v: unknown): FigAlign => (v === 'left' || v === 'right' ? v : 'center');
+/** Width in % of the text column (10–100); a float with no width starts at half. */
+export const figWidth = (v: unknown, align: FigAlign): number => {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return align === 'center' ? 100 : 50;
+  return Math.round(Math.min(100, Math.max(10, n)));
+};
+
+/**
+ * Places a chart, diagram, mind map or table card (0.16): left/right float with text beside them, centre
+ * sits on its own row; any of them can be narrower than the column (width in %).
+ */
+export function placeFigure(el: HTMLElement, alignRaw: unknown, widthRaw: unknown) {
+  const align = figAlign(alignRaw);
+  const pct = figWidth(widthRaw, align);
+  el.dataset.align = align;
+  el.style.width = pct < 100 ? `${pct}%` : '';
+  const tag = el.querySelector(':scope > .fig-size');
+  if (tag) tag.textContent = `${pct}%`;
+}
+
+/**
+ * A drag handle that resizes a figure (finger, pen or mouse), like a picture's. Shows the width while
+ * dragging; `commit` gets the final whole percent. Returns the handle and its size tag.
+ */
+export function sizeGrip(el: HTMLElement, label: string, now: () => Record<string, unknown>, commit: (pct: number) => void) {
+  const handle = h('button', { type: 'button', class: 'resize-handle fig-grip', 'aria-label': label, tabindex: -1, contenteditable: 'false' });
+  const tag = h('span', { class: 'size-tag fig-size', 'aria-hidden': 'true', contenteditable: 'false' });
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handle.setPointerCapture(e.pointerId);
+    const { align: a, width: w } = now();
+    const align = figAlign(a);
+    const startX = e.clientX;
+    const startPx = el.getBoundingClientRect().width;
+    const columnPx = (el.parentElement ?? el).getBoundingClientRect().width || 1;
+    const factor = align === 'center' ? 2 : 1;
+    const sign = align === 'right' ? -1 : 1;
+    let pct = figWidth(w, align);
+    tag.textContent = `${pct}%`;
+    el.classList.add('resizing');
+    const move = (ev: PointerEvent) => {
+      const px = startPx + sign * factor * (ev.clientX - startX);
+      pct = Math.round(Math.min(100, Math.max(20, (px / columnPx) * 100)));
+      el.style.width = pct < 100 ? `${pct}%` : '';
+      tag.textContent = `${pct}%`;
+    };
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      el.classList.remove('resizing');
+      commit(pct);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  });
+  return { handle, tag };
+}

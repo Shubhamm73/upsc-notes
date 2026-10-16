@@ -14,8 +14,8 @@ import type { Node as PMNode } from '@tiptap/pm/model';
  */
 const CLEARABLE = ['paragraph', 'heading', 'bulletList', 'orderedList', 'blockquote', 'callout', 'horizontalRule', 'panel'];
 const PICTURES = ['imageBlock', 'chartBlock', 'chart', 'sketchBlock', 'diagram', 'mindMap'];
-/** Pictures that can float with text beside them (charts since 0.11). */
-const FLOATS = ['imageBlock', 'sketchBlock', 'chartBlock', 'chart'];
+/** Pictures that can float with text beside them (charts since 0.11; diagrams, mind maps and tables since 0.16). */
+const FLOATS = ['imageBlock', 'sketchBlock', 'chartBlock', 'chart', 'diagram', 'mindMap', 'table'];
 
 /** True when the block starts below floated pictures: set to, or a heading not set to sit beside them. */
 export function startsBelow(n: PMNode): boolean {

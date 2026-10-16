@@ -48,8 +48,8 @@ fast-forward main → confirm the live version → run all suites against the li
 |---|---|---|---|---|
 | U4-1 | **Sketch block**: replaces "Sketch · coming soon"; S Pen pressure, palm rejection (only pen draws, a finger scrolls), eraser/undo/clear, stored (image, and strokes if decided), backup, PDF | Opus · high | 0.9.0 | ☑ done (see "U4-1 as built") |
 | U4-2 | **Mark with the pen** (highlight text with the S Pen) + **optional haptics** (Settings switch, off by default) | Opus · medium | 0.15.0 | ☑ done (see "U4-2 as built") |
-| U4-3 | **Speed pass** on a 5,000-word note (open, typing, scroll, autosave, live counts, PDF, review), measured before/after at 4× CPU throttle | Opus · high | 0.16 | ☐ next |
-| U4-4 | **Accessibility pass** (axe, keyboard-only, contrast day/night, names, targets) + **PDF audit of every block** + close UI-4 | Sonnet · medium | 0.17 | ☐ |
+| U4-3 | **Speed pass** on a 5,000-word note (open, typing, scroll, autosave, live counts, PDF, review), measured before/after at 4× CPU throttle | Opus · high | 0.17 | ☐ next (0.16 went to the owner's three asks) |
+| U4-4 | **Accessibility pass** (axe, keyboard-only, contrast day/night, names, targets) + **PDF audit of every block** + close UI-4 | Sonnet · medium | 0.18 | ☐ |
 
 ### Motion spec (UI-2/UI-3)
 Open note: card expands to page 240 ms · Save: dot pulse then ✓ 160 ms · Highlight: marker sweep 200 ms · Mark reviewed: highlighted lines fly up into Quick insights 300 ms · Slash menu: fade + rise 4 px 120 ms · Flashcard flip 240 ms · Rating: slide out 200 ms · Summary rings fill 300 ms · Delete forever: row collapse 160 ms, no celebration.

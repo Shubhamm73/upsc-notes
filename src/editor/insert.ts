@@ -24,6 +24,8 @@ export interface InsertItem {
   soon?: boolean;
   /** Opens the list of callout kinds instead of running. */
   submenu?: boolean;
+  /** Not listed in the menu; found only by typing its name ("/diagram", "/mind map"). */
+  searchOnly?: boolean;
   /** Only offered from the + button (not from "/"), and only when this says so. */
   plusOnly?: (e: Editor) => boolean;
   run(e: Editor, env: InsertEnv): void;
@@ -84,16 +86,17 @@ export const INSERT_ITEMS: InsertItem[] = [
     keywords: 'table grid rows columns compare',
     run: (e) => openTableDialog(e)
   },
-  { id: 'chart', name: 'Chart', hint: '12 charts from numbers, 8 diagrams and a mind map from words', glyph: 'i:data', keywords: 'chart graph bar column line pie donut area radar scatter bubble gallery', run: (e) => openChartGallery(e) },
-  { id: 'diagram', name: 'Diagram', hint: 'Timeline, flowchart, cycle, pyramid, Venn, hierarchy, comparison, 2×2', glyph: 'i:diagram', keywords: 'diagram timeline flowchart flow cycle pyramid venn hierarchy tree comparison compare matrix swot', run: (e) => openChartGallery(e, 'words') },
-  { id: 'mindmap', name: 'Mind map', hint: 'Ideas around a centre: as many as you like', glyph: 'i:mindmap', keywords: 'mind map mindmap brainstorm ideas branches', run: (e) => insertMindMap(e) },
-  { id: 'image', name: 'Image', hint: 'From the tablet, resizable', glyph: 'i:image', keywords: 'image photo picture diagram map', run: (e, env) => env.pickImage(e) },
+  // 0.16: one entry for the one gallery (charts, diagrams, mind map); "/diagram" and "/mind map" still jump straight in
+  { id: 'chart', name: 'Chart', hint: 'Charts from numbers, diagrams and mind maps from words', glyph: 'i:data', keywords: 'chart graph bar column line pie donut area radar scatter bubble gallery', run: (e) => openChartGallery(e) },
+  { id: 'diagram', name: 'Diagram', hint: 'Timeline, flowchart, cycle, pyramid, Venn, hierarchy, comparison, 2×2', glyph: 'i:diagram', keywords: 'timeline flowchart flow cycle pyramid venn hierarchy tree comparison compare matrix swot', searchOnly: true, run: (e) => openChartGallery(e, 'words') },
+  { id: 'mindmap', name: 'Mind map', hint: 'Ideas around a centre: as many as you like', glyph: 'i:mindmap', keywords: 'mindmap brainstorm ideas branches', searchOnly: true, run: (e) => insertMindMap(e) },
+  { id: 'image', name: 'Image', hint: 'From the tablet, resizable', glyph: 'i:image', keywords: 'image photo picture', run: (e, env) => env.pickImage(e) },
   {
     id: 'sketch',
     name: 'Sketch',
     hint: 'Draw with the S Pen: maps, diagrams, flowcharts',
     glyph: 'i:pen',
-    keywords: 'sketch draw pen drawing diagram map flowchart s pen',
+    keywords: 'sketch draw pen drawing s pen',
     run: (e) => {
       insertBlocks(e, { type: 'sketchBlock', attrs: { strokes: [], height: SKETCH_H, width: 100, align: 'center', caption: '' } });
       selectSketchBefore(e);
@@ -127,7 +130,7 @@ export const INSERT_ITEMS: InsertItem[] = [
 export function filterItems(query: string): InsertItem[] {
   const q = query.trim().toLowerCase();
   const base = INSERT_ITEMS.filter((i) => !i.plusOnly);
-  if (!q) return base;
+  if (!q) return base.filter((i) => !i.searchOnly);
   const mine: InsertItem[] = savedStyles().map((st) => ({
     id: `style-${st.id}`,
     name: st.name,
