@@ -9,7 +9,9 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { DocNode } from '../db';
 import { ImageBlock } from './image-block';
-import { ChartBlock } from './chart-block';
+import { ChartBlock, ChartNode } from './chart-block';
+import { DiagramNode } from './diagram-block';
+import { MindMapNode } from './mindmap-block';
 import { SketchBlock } from './sketch-block';
 import { Callout } from './callout';
 import { pasteExtension, type PasteHooks } from './paste';
@@ -57,24 +59,28 @@ const ActiveBlock = Extension.create({
   }
 });
 
-/** Hides the real highlight under the 200 ms marker sweep, via a decoration (never by touching the editor's DOM). */
-export const sweepKey = new PluginKey<DecorationSet>('markSweep');
+/** Hides the real highlight under the 200 ms marker sweep, via a decoration (never by touching the editor's DOM).
+ *  The sweep's end only flags it `over`; the next transaction drops it. Clearing it with a transaction of its own could
+ *  write an older selection over a DOM selection ProseMirror has not read yet (selectionchange still pending). */
+export interface SweepState { set: DecorationSet; over: { v: boolean } }
+export const sweepKey = new PluginKey<SweepState>('markSweep');
+const NO_SWEEP: SweepState = { set: DecorationSet.empty, over: { v: true } };
 const MarkSweep = Extension.create({
   name: 'markSweep',
   addProseMirrorPlugins() {
     return [
-      new Plugin<DecorationSet>({
+      new Plugin<SweepState>({
         key: sweepKey,
         state: {
-          init: () => DecorationSet.empty,
-          apply(tr, set) {
-            const meta = tr.getMeta(sweepKey) as { from: number; to: number } | null | undefined;
-            if (meta === null) return DecorationSet.empty;
-            if (meta) return DecorationSet.create(tr.doc, [Decoration.inline(meta.from, meta.to, { class: 'sweeping' })]);
-            return set.map(tr.mapping, tr.doc);
+          init: () => NO_SWEEP,
+          apply(tr, s) {
+            const meta = tr.getMeta(sweepKey) as { from: number; to: number; over: { v: boolean } } | null | undefined;
+            if (meta === null || (meta === undefined && s.over.v)) return NO_SWEEP;
+            if (meta) return { set: DecorationSet.create(tr.doc, [Decoration.inline(meta.from, meta.to, { class: 'sweeping' })]), over: meta.over };
+            return { set: s.set.map(tr.mapping, tr.doc), over: s.over };
           }
         },
-        props: { decorations: (state) => sweepKey.getState(state) }
+        props: { decorations: (state) => sweepKey.getState(state)?.set }
       })
     ];
   }
@@ -173,6 +179,9 @@ export function createEditor(opts: {
       PanelColumn,
       ImageBlock,
       ChartBlock,
+      ChartNode,
+      DiagramNode,
+      MindMapNode,
       SketchBlock,
       Callout,
       PictureFlow,

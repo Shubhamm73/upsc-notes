@@ -504,7 +504,7 @@ with sync_playwright() as p:
     bpath = OUT / "looks-backup.json"
     dl.value.save_as(bpath)
     bk = json.loads(bpath.read_text())
-    check(bk["format"] == 6 and sorted(s["name"] for s in bk["styles"]) == ["Polity pill", "Rights quote", "Temp"], f"backup format 6 carries the styles, the deleted one as a tombstone ({bk['format']}, {[s['name'] for s in bk.get('styles', [])]})")
+    check(bk["format"] == 7 and sorted(s["name"] for s in bk["styles"]) == ["Polity pill", "Rights quote", "Temp"], f"backup format 7 carries the styles, the deleted one as a tombstone ({bk['format']}, {[s['name'] for s in bk.get('styles', [])]})")
     fresh = browser.new_context(viewport={"width": 1280, "height": 800})
     fp = fresh.new_page()
     fp.on("pageerror", lambda e: errors.append(str(e)))

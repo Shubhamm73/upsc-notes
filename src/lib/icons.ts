@@ -51,7 +51,10 @@ export const PATHS: Record<string, string> = {
   book: '<path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5c-.8 0-1.5-.7-1.5-1.5z"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5z"/>',
   palette: '<path d="M12 3a9 9 0 1 0 0 18c1 0 1.6-.8 1.6-1.6 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7.5" r="1"/><circle cx="14.5" cy="7.5" r="1"/>',
   container: '<rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="M7 9.5h10M7 13h7"/>',
-  columns: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M12 5v14"/>'
+  columns: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M12 5v14"/>',
+  diagram: '<rect x="3" y="4" width="7" height="5" rx="1.5"/><rect x="14" y="4" width="7" height="5" rx="1.5"/><rect x="8.5" y="15" width="7" height="5" rx="1.5"/><path d="M6.5 9v3h11V9M12 12v3"/>',
+  mindmap: '<rect x="8" y="10" width="8" height="4" rx="2"/><path d="M8 12H5M16 12h3M10 10L7 6M14 10l3-4M10 14l-3 4M14 14l3 4"/><circle cx="4" cy="12" r="1.2"/><circle cx="20" cy="12" r="1.2"/><circle cx="6.5" cy="5" r="1.2"/><circle cx="17.5" cy="5" r="1.2"/><circle cx="6.5" cy="19" r="1.2"/><circle cx="17.5" cy="19" r="1.2"/>',
+  fold: '<path d="M6 9l6 6 6-6"/>'
 };
 
 export function icon(name: keyof typeof PATHS | string, size = 22): SVGSVGElement {

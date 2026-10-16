@@ -1,7 +1,9 @@
-import { Chart } from 'chart.js';
 import { db, type DocNode, type Note, type Vocab } from '../db';
 import { FolderIndex } from '../lib/folders';
-import { chartConfig, PRINT_PALETTE, readChart, type ChartData } from '../editor/chart-block';
+import { chartKindName, readChartData, renderChart } from '../lib/charts';
+import { diagramKindName, readDiagram, renderDiagram } from '../lib/diagrams';
+import { readMindMap, renderMindMap } from '../lib/mindmap';
+import { PRINT_INK } from '../lib/svg-ink';
 import { collectImageIds } from '../editor/images';
 import { ymd } from '../lib/dates';
 import { groupInsights } from '../lib/insights';
@@ -117,24 +119,72 @@ async function shapePicture(src: Pic, a: Record<string, unknown>): Promise<Pic> 
   return { url, w: canvas.width, h: canvas.height };
 }
 
-/** Draws a chart off-screen in print colours and returns it as a PNG. */
-function chartToPng(d: ChartData): string {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1200;
-  canvas.height = 600;
-  Object.assign(canvas.style, { position: 'fixed', left: '-10000px', top: '0', width: '600px', height: '300px' });
-  document.body.append(canvas);
-  const cfg = chartConfig(d, { animate: false, text: INK, grid: LINE, palette: PRINT_PALETTE, surface: '#ffffff' });
-  (cfg.options as Record<string, unknown>).responsive = false;
-  (cfg.options as Record<string, unknown>).devicePixelRatio = 2;
-  const prevSize = Chart.defaults.font.size;
-  Chart.defaults.font.size = 15; // readable once the chart is scaled onto the page
-  const chart = new Chart(canvas, cfg);
-  const url = chart.toBase64Image('image/png', 1);
-  chart.destroy();
-  Chart.defaults.font.size = prevSize;
-  canvas.remove();
-  return url;
+/**
+ * A chart, diagram or mind map (0.13) as vector SVG in print colours: crisp at any zoom.
+ * pdfmake reads the SVG's own attributes (no CSS); text falls back to Roboto.
+ */
+interface Figure {
+  title: string;
+  sub: string;
+  source: string;
+  svg: string;
+  w: number;
+  h: number;
+}
+function figureOf(n: DocNode, ctx: Ctx): Figure | null {
+  const a = (n.attrs ?? {}) as Record<string, unknown>;
+  const ink = { ...PRINT_INK, subj: ctx.subj };
+  if (n.type === 'chart' || n.type === 'chartBlock') {
+    const d = readChartData(a, n.type === 'chartBlock');
+    const out = renderChart(d, ink, { legend: true });
+    return { title: d.title || chartKindName(d.kind), sub: d.subtitle, source: d.source, svg: out.svg, w: out.w, h: out.h };
+  }
+  if (n.type === 'diagram') {
+    const d = readDiagram(a);
+    const out = renderDiagram(d, ink);
+    return { title: d.title || diagramKindName(d.kind), sub: '', source: '', svg: out.svg, w: out.w, h: out.h };
+  }
+  if (n.type === 'mindMap') {
+    const m = readMindMap(a);
+    // folded branches print unfolded: the page can't be tapped open
+    const out = renderMindMap(m, ink, { unfold: true });
+    return { title: m.nodes[0]?.text.trim() || 'Mind map', sub: `Mind map · ${m.nodes.length} ideas`, source: '', svg: out.svg, w: out.w, h: out.h };
+  }
+  return null;
+}
+/** A4 landscape inside the margins: a big mind map gets a page of its own. */
+const LAND_W = 841.89 - MARGIN * 2;
+// page height less the top/bottom page margins (56 + 52) and room for the title and subtitle above the map
+const LAND_H = PAGE_W - 56 - 52 - 48;
+
+function figureHead(f: Figure, alignment: string): Content[] {
+  const out: Content[] = [{ text: f.title, bold: true, margin: [0, 0, 0, f.sub ? 1 : 4], alignment }];
+  if (f.sub) out.push({ text: f.sub, color: MUTED, fontSize: 9, margin: [0, 0, 0, 4], alignment });
+  return out;
+}
+const figureFoot = (f: Figure, alignment: string): Content[] => (f.source ? [{ text: /^source\b/i.test(f.source) ? f.source : `Source: ${f.source}`, color: MUTED, fontSize: 8.5, italics: true, margin: [0, 3, 0, 0], alignment }] : []);
+
+function figureBlock(n: DocNode, ctx: Ctx): Content {
+  const f = figureOf(n, ctx)!;
+  const side = n.type !== 'diagram' && n.type !== 'mindMap' && (n.attrs?.align === 'left' || n.attrs?.align === 'right') ? String(n.attrs.align) : null;
+  const pct = Math.min(100, Math.max(20, Number(n.attrs?.width ?? 50)));
+  const alignment = side ?? 'left';
+  const big = n.type === 'mindMap' && ((n.attrs?.nodes as unknown[] | undefined)?.length ?? 0) > 30;
+  const tooWide = n.type === 'mindMap' && (ctx.width * f.h) / f.w < 160 && f.w > ctx.width * 1.4;
+  if ((big || tooWide) && ctx.width >= CONTENT_W - 1) {
+    // its own landscape page, then back to portrait for what follows
+    const w = Math.min(LAND_W, (LAND_H * f.w) / f.h);
+    return {
+      stack: [
+        { stack: [...figureHead(f, 'left'), { svg: f.svg, width: w, height: (w * f.h) / f.w, alignment: 'center' }], pageBreak: 'before', pageOrientation: 'landscape' },
+        { text: '', pageBreak: 'before', pageOrientation: 'portrait' }
+      ]
+    } as Content;
+  }
+  let w = side ? (ctx.width * pct) / 100 : Math.min(ctx.width, n.type === 'mindMap' ? f.w * 0.8 : f.w * 0.9, CONTENT_W);
+  // keep within one page
+  if ((w * f.h) / f.w > 600) w = (600 * f.w) / f.h;
+  return { stack: [...figureHead(f, alignment), { svg: f.svg, width: w, height: (w * f.h) / f.w, alignment }, ...figureFoot(f, alignment)], unbreakable: true, margin: [0, 4, 0, 10] };
 }
 
 // ---------------- editor JSON -> pdfmake ----------------
@@ -270,8 +320,8 @@ function blocks(nodes: DocNode[] | undefined, ctx: Ctx): Content[] {
     const n = list[i];
     const align = n.attrs?.align;
     const floated = (align === 'left' || align === 'right') && wraps(list[i + 1]);
-    const chart = floated && n.type === 'chartBlock' ? readChart(n.attrs as Partial<ChartData>) : null;
-    const img: Pic | undefined = chart ? { url: chartToPng(chart), w: 2, h: 1 } : floated ? pictureOf(n, ctx) : undefined;
+    const fig = floated && (n.type === 'chartBlock' || n.type === 'chart') ? figureOf(n, ctx) : null;
+    const img: Pic | undefined = fig ? { url: '', w: fig.w, h: fig.h } : floated ? pictureOf(n, ctx) : undefined;
     // A left/right picture, sketch or chart with text after it prints side by side with that text, as on
     // screen: the text blocks that fit next to the picture's height go in the column beside it.
     if (img && floated) {
@@ -285,8 +335,7 @@ function blocks(nodes: DocNode[] | undefined, ctx: Ctx): Content[] {
         used += textHeight(list[i + 1], textW);
         beside.push(list[++i]);
       }
-      const title: Content[] = chart ? [{ text: chart.title || 'Chart', bold: true, margin: [0, 0, 0, 4] }] : [];
-      const picture = { stack: [...title, { image: img.url, width: w, height: imgH }, ...captionOf(n, 'left')] };
+      const picture = fig ? { stack: [...figureHead(fig, 'left'), { svg: fig.svg, width: w, height: imgH }, ...figureFoot(fig, 'left')] } : { stack: [{ image: img.url, width: w, height: imgH }, ...captionOf(n, 'left')] };
       const text = { width: '*', stack: blocks(beside, { ...ctx, width: textW }) };
       out.push({ columns: align === 'left' ? [{ width: w, stack: [picture] }, text] : [text, { width: w, stack: [picture] }], columnGap: 14, margin: [0, 4, 0, 10] });
       continue;
@@ -343,20 +392,11 @@ function block(n: DocNode, ctx: Ctx): Content | null {
       const picture = { image: img.url, width: w, alignment };
       return caption.length ? { stack: [picture, ...caption], unbreakable: true, margin: [0, 4, 0, 10] } : { ...picture, margin: [0, 4, 0, 10] };
     }
-    case 'chartBlock': {
-      const d = readChart(n.attrs as Partial<ChartData>);
-      const side = n.attrs?.align === 'left' || n.attrs?.align === 'right' ? String(n.attrs.align) : null;
-      const pct = Math.min(100, Math.max(20, Number(n.attrs?.width ?? 50)));
-      const w = side ? (ctx.width * pct) / 100 : Math.min(ctx.width, CONTENT_W);
-      return {
-        stack: [
-          { text: d.title || 'Chart', bold: true, margin: [0, 0, 0, 4], alignment: side ?? 'left' },
-          { image: chartToPng(d), width: w, height: w / 2, alignment: side ?? 'left' }
-        ],
-        unbreakable: true,
-        margin: [0, 4, 0, 10]
-      };
-    }
+    case 'chart':
+    case 'chartBlock':
+    case 'diagram':
+    case 'mindMap':
+      return figureBlock(n, ctx);
     case 'callout': {
       const k = calloutKind(n.attrs?.kind);
       return {

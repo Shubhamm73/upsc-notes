@@ -120,6 +120,33 @@ def mark(page, text):
     select_text(page, text)
     page.click("#bubble button[aria-label='Highlight']")
     to_line_end(page)
+    # the next select waits until the 200 ms marker sweep is fully gone (layer and decoration)
+    page.wait_for_function("() => !document.querySelector('.sweep, .sweeping')", timeout=3000)
+
+
+# Sets a new selection in the same task, just before the highlight sweep's 230 ms cleanup runs: the cleanup must not
+# put the old selection back (0.13: it dispatched before ProseMirror read the pending selectionchange; no bubble).
+RACE_HOOK = """(t) => { const o = window.setTimeout;
+  window.setTimeout = function (fn, ms, ...a) { if (ms !== 230) return o(fn, ms, ...a); window.setTimeout = o;
+    return o(() => { const root = document.querySelector('.section-body .ProseMirror');
+      const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let hit = null, n;
+      while ((n = w.nextNode())) { const i = n.textContent.lastIndexOf(t); if (i >= 0) hit = [n, i]; }
+      const r = document.createRange(); r.setStart(hit[0], hit[1]); r.setEnd(hit[0], hit[1] + t.length);
+      getSelection().removeAllRanges(); getSelection().addRange(r); fn(); }, ms); }; }"""
+
+
+def mark_then_select(page, text, nxt):
+    select_text(page, text)
+    page.evaluate(RACE_HOOK, nxt)
+    page.click("#bubble button[aria-label='Highlight']")
+    page.wait_for_timeout(300)
+    try:
+        page.wait_for_selector("#bubble:not([hidden])", timeout=1500)
+        page.wait_for_function("() => !document.querySelector('.sweep, .sweeping')", timeout=1500)
+        return page.evaluate("""(t) => getSelection().toString() === t && [...document.querySelectorAll('.section-body mark')]
+          .some(m => m.textContent === %r && getComputedStyle(m).backgroundColor !== 'rgba(0, 0, 0, 0)')""" % text, nxt)
+    except Exception:
+        return False
 
 
 def new_ctx(browser, n, **kw):
@@ -223,7 +250,8 @@ with sync_playwright() as p:
     select_text(page, "FR and")
     page.keyboard.type("Fundamental Rights and")
     page.wait_for_timeout(150)
-    mark(page, "Article 21")
+    check(mark_then_select(page, "Article 21", "Minerva Mills"), "a selection made just before the highlight sweep ends is kept: bubble shows, highlight shows")
+    to_line_end(page)
     expect(page.locator("#save-state")).to_have_attribute("data-state", "saved", timeout=5000)
     page.wait_for_timeout(300)
     check(len(all_(page, "cards")) == 3 and all(c["retiredAt"] is None for c in all_(page, "cards")), "editing a note does not touch its cards")
@@ -400,7 +428,7 @@ with sync_playwright() as p:
     bpath = OUT / "ui3-backup.json"
     dl.value.save_as(bpath)
     bk = json.loads(bpath.read_text())
-    check(bk["format"] == 6 and bk["schemaVersion"] == 4, "backup: format 6 (0.12: saved styles), schema 4")
+    check(bk["format"] == 7 and bk["schemaVersion"] == 4, "backup: format 7 (0.13: charts, diagrams, mind maps), schema 4")
     check(len(bk["cards"]) == 4 and bk["counts"]["cards"] == 4 and bk["meta"]["reviewDays"] == [D0, D1], "backup carries all cards (retired too) and the review days")
 
     # ---- D4: re-highlighting a removed line brings its card back ----

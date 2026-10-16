@@ -742,6 +742,8 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       subject.setAttribute('aria-label', `Subject: ${index.label(d)}. Move to…`);
       backLink.href = sub ? folderHref(sub.id) : '#/notes';
       backText.textContent = sub ? index.label(d) : 'Notes';
+      // charts, diagrams and mind maps that follow the subject colour redraw (0.13)
+      window.dispatchEvent(new Event('subjectchange'));
     };
 
     // quick insights

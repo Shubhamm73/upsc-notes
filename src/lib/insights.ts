@@ -1,4 +1,5 @@
 import type { DocNode, InsightItem, Note, NoteInsights } from '../db';
+import { markedNodes, readMindMap } from './mindmap';
 
 /**
  * Pulls every highlighted run of text out of a note, in reading order,
@@ -33,6 +34,15 @@ export function keyLineDetails(doc: DocNode): { text: string; before: string; af
   const out: { text: string; before: string; after: string }[] = [];
   const seen = new Set<string>();
   const walk = (n: DocNode) => {
+    // a marked idea in a mind map (0.13) is a key line; its path ("Centre › Branch") stands before the blank
+    if (n.type === 'mindMap') {
+      for (const m of markedNodes(readMindMap((n.attrs ?? {}) as Record<string, unknown>))) {
+        if (seen.has(m.text.toLowerCase())) continue;
+        seen.add(m.text.toLowerCase());
+        out.push({ text: m.text, before: m.context ? `${m.context} › ` : '', after: '' });
+      }
+      return;
+    }
     const kids = n.content ?? [];
     const isTextBlock = kids.length > 0 && kids.every((k) => k.type === 'text' || k.type === 'hardBreak');
     if (!isTextBlock) {

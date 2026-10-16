@@ -11,11 +11,13 @@ const APP = 'upsc-notes';
  * 1 = 0.1–0.7 (notes, words, images); 2 = 0.8 (adds review cards and the streak's review days);
  * 3 = 0.9 (notes may hold sketch blocks); 4 = 0.10 (adds folders; notes and words may name their folder);
  * 5 = 0.11 (adds settings: theme, font, width, outline, streak moments, sketch tools, last subject, Drive schedule);
- * 6 = 0.12+ (adds his saved heading and container styles; notes may hold containers and styled tables / headings).
+ * 6 = 0.12 (adds his saved heading and container styles; notes may hold containers and styled tables / headings);
+ * 7 = 0.13+ (notes may hold the new charts, diagrams and mind maps).
  * An older app refuses a newer format instead of opening sections it can't show as blank pages
- * (format 3), dropping the folders (format 4), the settings (format 5) or the saved styles (format 6).
+ * (format 3), dropping the folders (format 4), the settings (format 5) or the saved styles (format 6),
+ * or importing notes whose charts, diagrams and mind maps it can only show read-only (format 7).
  */
-export const FORMAT = 6;
+export const FORMAT = 7;
 
 interface ImageOut extends Omit<ImageRec, 'blob'> {
   type: string;

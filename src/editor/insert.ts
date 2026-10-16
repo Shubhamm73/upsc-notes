@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { CALLOUT_KINDS } from '../lib/callouts';
-import { DEFAULT_CHART } from './chart-block';
+import { insertMindMap, openChartGallery } from './gallery';
 import { setCallout } from './callout';
 import { selectSketchBefore } from './sketch-block';
 import { SKETCH_H } from '../lib/sketch';
@@ -84,7 +84,9 @@ export const INSERT_ITEMS: InsertItem[] = [
     keywords: 'table grid rows columns compare',
     run: (e) => openTableDialog(e)
   },
-  { id: 'chart', name: 'Chart', hint: 'Bar, line or pie from a small grid', glyph: 'i:data', keywords: 'chart graph bar line pie', run: (e) => insertBlocks(e, { type: 'chartBlock', attrs: structuredClone(DEFAULT_CHART) }) },
+  { id: 'chart', name: 'Chart', hint: '12 charts from numbers, 8 diagrams and a mind map from words', glyph: 'i:data', keywords: 'chart graph bar column line pie donut area radar scatter bubble gallery', run: (e) => openChartGallery(e) },
+  { id: 'diagram', name: 'Diagram', hint: 'Timeline, flowchart, cycle, pyramid, Venn, hierarchy, comparison, 2×2', glyph: 'i:diagram', keywords: 'diagram timeline flowchart flow cycle pyramid venn hierarchy tree comparison compare matrix swot', run: (e) => openChartGallery(e, 'words') },
+  { id: 'mindmap', name: 'Mind map', hint: 'Ideas around a centre: as many as you like', glyph: 'i:mindmap', keywords: 'mind map mindmap brainstorm ideas branches', run: (e) => insertMindMap(e) },
   { id: 'image', name: 'Image', hint: 'From the tablet, resizable', glyph: 'i:image', keywords: 'image photo picture diagram map', run: (e, env) => env.pickImage(e) },
   {
     id: 'sketch',

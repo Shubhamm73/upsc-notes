@@ -13,9 +13,9 @@ import type { Node as PMNode } from '@tiptap/pm/model';
  * - Typing while a picture is selected starts a new line after it instead of replacing it.
  */
 const CLEARABLE = ['paragraph', 'heading', 'bulletList', 'orderedList', 'blockquote', 'callout', 'horizontalRule', 'panel'];
-const PICTURES = ['imageBlock', 'chartBlock', 'sketchBlock'];
+const PICTURES = ['imageBlock', 'chartBlock', 'chart', 'sketchBlock', 'diagram', 'mindMap'];
 /** Pictures that can float with text beside them (charts since 0.11). */
-const FLOATS = ['imageBlock', 'sketchBlock', 'chartBlock'];
+const FLOATS = ['imageBlock', 'sketchBlock', 'chartBlock', 'chart'];
 
 /** True when the block starts below floated pictures: set to, or a heading not set to sit beside them. */
 export function startsBelow(n: PMNode): boolean {

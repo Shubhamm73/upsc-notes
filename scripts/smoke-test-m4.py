@@ -125,7 +125,9 @@ with sync_playwright() as p:
     page.wait_for_selector(".img-block img[src]")
     ed.locator("p").last.click()
     slash(page, "chart")
-    page.wait_for_selector(".chart-block canvas")
+    page.wait_for_selector("#chart-gallery")
+    page.click("#chart-gallery .gallery-tile[data-kind='column']")
+    page.wait_for_selector(".chart-block svg")
     page.click("#add-section")
     page.locator(".section-heading").nth(1).fill("Powers")
     page.locator(".section-body .rich").nth(1).click()
@@ -153,10 +155,10 @@ with sync_playwright() as p:
     note = grab("#note-pdf")
     t = text_of(note)
     for needle in ["Parliament", "GS2 › General · Polity", "Composition", "Lok Sabha basics", "– Max strength 552", "1. Speaker elected",
-                   "Money bills start here", "House", "5 years", "Untitled chart", "Powers", "In my own words"]:
+                   "Money bills start here", "House", "5 years", "Renewable energy capacity", "Powers", "In my own words"]:
         check(needle in t, f"note PDF contains '{needle}'")
     imgs = image_count(note)
-    check(imgs >= 2, f"note PDF embeds photo and chart ({imgs} images)")
+    check(imgs >= 1, f"note PDF embeds the photo ({imgs} images; the chart prints as vector drawing, not a picture)")
     subprocess.run(["pdftoppm", "-png", "-r", "60", "-f", "1", "-l", "1", str(note), str(OUT / "note-page")])
 
     # ---- vocab + full PDF ----

@@ -2,7 +2,7 @@
 
 Offline-first study-notes PWA for one UPSC aspirant (owner's brother) on a **Samsung Galaxy Tab S8**.
 Owner: Shubham (GitHub `Shubhamm73`). Live: https://shubhamm73.github.io/upsc-notes/ (GitHub Pages via Actions on push to `main`).
-Current version: **0.12.0 (Tables, headings and containers, R4 of the six-asks plan)**. Next: **R5 — 0.13 Charts, diagrams and mind map** (see "Six-asks plan" in the roadmap; it comes BEFORE the rest of UI-4).
+Current version: **0.13.0 (Charts, diagrams and mind map, R5 of the six-asks plan)**. Next: **R6 — 0.14 Themes and templates** (see "Six-asks plan" in the roadmap; it comes BEFORE the rest of UI-4).
 
 **Read this before doing anything: the work order is the "Six-asks plan" table below (R1–R6), then the rest of UI-4.** On 13 Oct 2026 the six-asks plan (UPSC Notes Redesign Plan artifact) recommended moving UI-4 after the six asks, but this file was written with the UI-4 plan instead, so 0.9.0 built Sketch and the next session started UI-4 step 2 again. The owner confirmed (13 Oct 2026, "go ahead with the recommended plan steps"): six asks first, every recommended decision, UI-4 U4-2…U4-4 after them. Sketch (0.9.0) stays.
 
@@ -16,7 +16,7 @@ Current version: **0.12.0 (Tables, headings and containers, R4 of the six-asks p
 - Owner prefers: direct disagreement when he's wrong, structured answers (tables/bullets), state your understanding before big builds, solutions not lectures.
 
 ## Stack and layout
-Vite 8 + TypeScript (vanilla, no framework), vite-plugin-pwa (generateSW, `registerType: 'prompt'`), Dexie 4, TipTap 3 (`@tiptap/*` 3.31.3), Chart.js 4, pdfmake 0.3 (lazy-loaded), fontsource fonts (Latin subsets). `base: '/upsc-notes/'`.
+Vite 8 + TypeScript (vanilla, no framework), vite-plugin-pwa (generateSW, `registerType: 'prompt'`), Dexie 4, TipTap 3 (`@tiptap/*` 3.31.3), pdfmake 0.3 (lazy-loaded); charts, diagrams and mind maps are the app's own SVG (Chart.js dropped in 0.13), fontsource fonts (Latin subsets). `base: '/upsc-notes/'`.
 
 ```
 src/main.ts            fonts, applyAppearance(), SW registration
@@ -35,7 +35,8 @@ src/views/more.ts      More menu;  src/views/search.ts  Ctrl+K overlay
 src/editor/            editor.ts (TipTap setup, dash-list attr, active-block + mark-sweep decorations, slash hook)
                        table.ts (styled table card, figure columns, resize), heading-look.ts, panel.ts (containers), look-tools.ts (Style panel, table dialog, size popover, container sheet)
                        tools.ts (slash/+ insert menu, floating toolbar + link box, context bar, touch bar, highlight sweep)
-                       insert.ts (insert items + list/block helpers), callout.ts (callout node, PYQ details), image-block.ts, chart-block.ts, images.ts
+                       insert.ts (insert items + list/block helpers), callout.ts (callout node, PYQ details), image-block.ts, images.ts
+                       chart-block.ts, diagram-block.ts, mindmap-block.ts, mindmap-editor.ts (full-screen), gallery.ts (Insert → Chart), figure-kit.ts
                        paste.ts, flow.ts (text on every side of a picture), crop.ts (Crop & shape screen), history.ts (note-wide Undo/Redo),
                        sketch-block.ts (Sketch node view: pen input, palm rejection, tools strip)
 src/pdf/               export.ts (section / note / all → pdfmake), run.ts
@@ -47,7 +48,8 @@ src/lib/               drive-config (owner's public Google values), drive (GIS p
                        sheet (centred dialog), icons, h (DOM builder), doc (text, search text, word count, callouts, captions), callouts, templates, menu (popover),
                        shapes (picture shapes: CSS clip-path, canvas path for the PDF, crop maths),
                        sketch (stroke code, colours, drawing, eraser hit test, PNG for the PDF; pure, shared by screen and PDF)
-                       looks (colours, heading looks, containers, table styles, figure columns; pure), my-styles (saved styles, Same as last)
+                       looks (colours, heading looks, containers, table styles, figure columns; pure), my-styles (saved styles, Same as last),
+                       svg-ink (screen/print ink, palettes), charts / diagrams / mindmap (pure: data, samples, layout, → SVG string; shared by screen, gallery and PDF)
 scripts/smoke-test*.py Playwright checks (run against `npx vite preview --port 4173`)
 ```
 
@@ -58,10 +60,12 @@ Routes: `#/` Today · `#/review` (`/insights`, `/words`, `/notes`) · `#/notes` 
 npm ci
 npm run build                       # tsc + vite build
 npx vite preview --port 4173 &      # then:
-for t in smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2 smoke-test-ui3 smoke-test-paste smoke-test-canvas2 smoke-test-sketch smoke-test-share smoke-test-folders smoke-test-drive smoke-test-inline smoke-test-tables smoke-test-looks; do python3 scripts/$t.py; done
+for t in smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2 smoke-test-ui3 smoke-test-paste smoke-test-canvas2 smoke-test-sketch smoke-test-share smoke-test-folders smoke-test-drive smoke-test-inline smoke-test-tables smoke-test-looks smoke-test-charts smoke-test-diagrams smoke-test-mindmap; do python3 scripts/$t.py; done
+scripts/run-suites.sh               # the same, starts/stops the preview itself, prints totals; LIVE=1 for the live site; on macOS adds scripts/linux-shim
 ```
 Python deps: playwright, pypdf, Pillow; `pdftotext` for the PDF test. In the cloud container pin `pip install playwright==1.56.0` (matches the pre-installed Chromium build 1194; newer pip versions look for a browser that isn't there).
-0.12.0 baseline: 17 suites, 853 checks, all passing (smoke-test-tables adds 68, smoke-test-looks 83); upgrade test from 0.11.0 (039257d): 56 checks, all passing, 4 runs in a row (from 0.10.0 (c1328e6): 53). It now also proves an upgraded tablet's backup is format 6 with no saved styles, and that the 0.11 build refuses a format-6 backup, stores nothing, and opens a 0.12 note read-only (its "newer version" notice in place of the section) without changing it.
+0.13.0 baseline: 20 suites, 1041 checks, all passing (smoke-test-charts adds 57, smoke-test-diagrams 62, smoke-test-mindmap 68; ui3 +1: a selection made just before the highlight sweep ends is kept); upgrade test from 0.12.0 (33a36de): 56 checks, all passing, 4 runs in a row. It now proves the upgraded tablet's backup is format 7, and that the 0.12 build refuses a format-7 backup, stores nothing, and opens a 0.13 note read-only without changing it. The 0.12 worktree needs its own `npm ci` (Chart.js is no longer in our node_modules).
+0.12.0 baseline was: 17 suites, 853 checks, all passing (smoke-test-tables adds 68, smoke-test-looks 83); upgrade test from 0.11.0 (039257d): 56 checks, all passing, 4 runs in a row (from 0.10.0 (c1328e6): 53). It now also proves an upgraded tablet's backup is format 6 with no saved styles, and that the 0.11 build refuses a format-6 backup, stores nothing, and opens a 0.12 note read-only (its "newer version" notice in place of the section) without changing it.
 0.11.0 baseline was: 15 suites, 702 checks, all passing (smoke-test-drive adds 80, smoke-test-inline 26, canvas2 +1: a heading beside a picture, then ↓ Below picture); upgrade test from 0.10.0 (c1328e6): 52 checks, all passing, 4 runs in a row (from 0.9.1 (6f13571): 54). It now also proves his device settings survive the update, the upgraded tablet's format-5 backup carries them and every record (a fresh tablet takes both), and the old build refuses format 5 and stores nothing.
 0.10.0 baseline was: 13 suites, 595 checks, all passing (smoke-test-folders adds 88); upgrade test from 0.9.1 (6f13571): 48 checks, all passing, 4 runs in a row (from 0.9.0 (7d85b13) also 48). From a 0.9+ old build it first loads a real-size tablet (220 notes, 1,100 words, 30 pictures, 147 cards) through the old build's own Import.
 0.9.1 baseline was: 12 suites, 507 checks (smoke-test-share adds 18); upgrade test from 0.9.0 (7d85b13): 31 checks (the 3 "an old build refuses a sketch backup" checks run only when the old build is below 0.9.0).
@@ -81,8 +85,8 @@ by swapping `URL` to `https://shubhamm73.github.io/upsc-notes/`.
 
 
 ## Where the rest lives (read on demand, not every session)
-- `docs/roadmap.md`: approved roadmap, Six-asks plan table (R1-R6), UI-4 plan, motion spec. READ before starting any release. **Next up: R5 (0.13) Charts, diagrams and mind map.**
-- `docs/history.md`: "Done so far" and the "as built" gotchas for R4, R3, R2, U4-1, UI-3, UI-2. Read the matching section before changing that feature.
+- `docs/roadmap.md`: approved roadmap, Six-asks plan table (R1-R6), UI-4 plan, motion spec. READ before starting any release. **Next up: R6 (0.14) Themes and templates.**
+- `docs/history.md`: "Done so far" and the "as built" gotchas for R5, R4, R3, R2, U4-1, UI-3, UI-2. Read the matching section before changing that feature.
 - Where the roadmap says "update this file", do: as-built notes -> `docs/history.md`; tick the step -> `docs/roadmap.md`; version and "Next" line -> the header of this file. Keep this file short.
 
 ## Reference documents (claude.ai artifacts, owner's account)
@@ -96,7 +100,7 @@ by swapping `URL` to `https://shubhamm73.github.io/upsc-notes/`.
 - PDF engine can't shape complex scripts (Hindi dropped anyway). PDF table columns are equal width unless dragged to widths on screen (then proportional).
 - Sketches: the eraser removes whole strokes (no partial rub-out); no pinch-zoom inside a sketch; beside the outline rail on the Tab S8 the sketch tools wrap to two rows. The S Pen hover / no-scroll behaviour, real pressure range and side-button reporting are emulated in tests and must be confirmed on the tablet.
 - Text follows a picture's shape on screen only; the PDF wraps beside its box. Undo history is per open note (ends when the note closes).
-- Precache ≈ 2.98 MB (pdfmake + fonts).
+- Precache ≈ 3.07 MB (pdfmake + fonts; 0.13 dropped Chart.js but added its own chart, diagram and mind-map code).
 - Subject rings count notes only (reviewed and not overdue), so insight and word cards don't move them; the summary rings only change when a note card is rated.
 - Folders (0.10): notes inside a subject are listed newest edit first (no manual order); words have no Review-these-words button per date (the review session still takes every due word); a word is moved by date only (no Move to… across a list); dates and months sort themselves (no drag). Deleted folders are kept as small records forever (they stop a merge from bringing them back). "Add word to today" makes today's date folder even if he then leaves the word empty (an empty date can be deleted in Edit).
 - Rating a note (or Mark reviewed) changes its `updatedAt`, so Today's "Continue writing" may show it as "Edited just now" when no note was opened since.

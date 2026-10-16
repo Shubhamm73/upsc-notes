@@ -1,5 +1,8 @@
 import type { DocNode, Note } from '../db';
 import { calloutLabel } from './callouts';
+import { chartWords, readChartData } from './charts';
+import { diagramWords, readDiagram } from './diagrams';
+import { mindMapWords, readMindMap } from './mindmap';
 
 /**
  * M1 keeps a plain-text body but stores it in the editor's JSON shape,
@@ -56,7 +59,7 @@ export function noteSearchText(n: Note): string {
     n.subject,
     n.explain,
     n.connect,
-    ...n.sections.map((s) => [s.heading, docToText(s.doc), ...calloutsIn(s.doc).map((c) => `${c.label} callout`), ...imageCaptions(s.doc), ...lookTexts(s.doc), ...sketchesIn(s.doc).map(() => 'sketch')].join(' '))
+    ...n.sections.map((s) => [s.heading, docToText(s.doc), ...calloutsIn(s.doc).map((c) => `${c.label} callout`), ...imageCaptions(s.doc), ...lookTexts(s.doc), ...figureWords(s.doc), ...sketchesIn(s.doc).map(() => 'sketch')].join(' '))
   ]
     .join(' ')
     .toLowerCase();
@@ -78,6 +81,20 @@ export function imageCaptions(doc: DocNode | undefined): string[] {
   const out: string[] = [];
   const walk = (n: DocNode) => {
     if ((n.type === 'imageBlock' || n.type === 'sketchBlock') && typeof n.attrs?.caption === 'string' && n.attrs.caption.trim()) out.push(n.attrs.caption.trim());
+    (n.content ?? []).forEach(walk);
+  };
+  walk(doc ?? { type: 'doc' });
+  return out;
+}
+
+/** Every word of the charts, diagrams and mind maps (0.13): titles, labels, series, items, ideas. */
+export function figureWords(doc: DocNode | undefined): string[] {
+  const out: string[] = [];
+  const walk = (n: DocNode) => {
+    const a = (n.attrs ?? {}) as Record<string, unknown>;
+    if (n.type === 'chart' || n.type === 'chartBlock') out.push(chartWords(readChartData(a, n.type === 'chartBlock')));
+    else if (n.type === 'diagram') out.push(diagramWords(readDiagram(a)));
+    else if (n.type === 'mindMap') out.push(mindMapWords(readMindMap(a)));
     (n.content ?? []).forEach(walk);
   };
   walk(doc ?? { type: 'doc' });

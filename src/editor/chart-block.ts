@@ -1,354 +1,314 @@
-import { Node, mergeAttributes } from '@tiptap/core';
-import {
-  ArcElement,
-  BarController,
-  BarElement,
-  CategoryScale,
-  Chart,
-  Legend,
-  LinearScale,
-  LineController,
-  LineElement,
-  PieController,
-  PointElement,
-  Tooltip,
-  type ChartConfiguration
-} from 'chart.js';
+import { Node, mergeAttributes, type Editor } from '@tiptap/core';
+import type { Node as PMNode } from '@tiptap/pm/model';
+import { NodeSelection } from '@tiptap/pm/state';
+import { h } from '../lib/h';
+import { CHART_KINDS, chartKindName, isXY, oneSeries, readChartData, renderChart, sampleChart, type ChartData, type ChartKind } from '../lib/charts';
+import { deskColours, screenInk } from '../lib/svg-ink';
+import { onInkChange, palettePicker, panelBtn, reducedMotion, segmented, tipper } from './figure-kit';
 
-Chart.register(
-  BarController,
-  BarElement,
-  LineController,
-  LineElement,
-  PointElement,
-  PieController,
-  ArcElement,
-  CategoryScale,
-  LinearScale,
-  Legend,
-  Tooltip
-);
+/**
+ * Charts. Since 0.13 every chart is a `chart` node: twelve kinds, a palette, a subtitle and a source,
+ * drawn as SVG (the same picture prints in the PDF). Charts from 0.12 stay `chartBlock` nodes and open
+ * with the new look; the first edit turns one into a `chart` (one undo step). An older app opens a
+ * section holding a `chart` read-only, untouched.
+ */
+export type { ChartData };
 
-export type ChartKind = 'bar' | 'line' | 'pie';
-export interface ChartSeries {
-  name: string;
-  values: number[];
-}
-export interface ChartData {
-  kind: ChartKind;
-  title: string;
-  labels: string[];
-  series: ChartSeries[];
+const CHART_ATTRS = ['kind', 'title', 'subtitle', 'source', 'labels', 'series', 'palette', 'values', 'unit'] as const;
+
+/** Starting attributes of a new chart of a kind (the gallery inserts these). */
+export function newChartAttrs(kind: ChartKind) {
+  return { ...sampleChart(kind), align: 'center', width: 100 };
 }
 
-export const DEFAULT_CHART: ChartData = {
-  kind: 'bar',
-  title: 'Untitled chart',
-  labels: ['Item 1', 'Item 2', 'Item 3'],
-  series: [{ name: 'Value', values: [3, 5, 2] }]
-};
+function chartView(legacy: boolean) {
+  return ({ node, getPos, editor }: { node: PMNode; getPos: (() => number | undefined) | boolean; editor: Editor }) => {
+    let current = node;
+    let working: ChartData | null = null;
+    const hidden = new Set<number>();
+    let drawn = '';
+    let first = true;
+    const fig = h('figure', { class: 'chart-block' });
+    const titleEl = h('strong', { class: 'chart-title' });
+    const subEl = h('span', { class: 'chart-sub' });
+    const editBtn = h('button', { type: 'button', class: 'chart-edit' }, 'Edit data');
+    const head = h('div', { class: 'chart-head' }, h('div', { class: 'chart-titles' }, titleEl, subEl), editBtn);
+    const canvas = h('div', { class: 'chart-canvas' });
+    const legendEl = h('div', { class: 'chart-legend', role: 'group', 'aria-label': 'Series: tap to hide or show' });
+    const foot = h('div', { class: 'chart-foot' });
+    const panel = h('div', { class: 'chart-panel', hidden: true });
+    fig.append(head, canvas, legendEl, foot, panel);
+    const tips = tipper(fig, canvas);
 
-function cssVar(name: string) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
+    const place = (n: PMNode) => {
+      const align = ['left', 'right'].includes(n.attrs.align) ? n.attrs.align : 'center';
+      fig.dataset.align = align;
+      fig.style.width = align === 'center' ? '' : `${Math.min(100, Math.max(20, Number(n.attrs.width) || 50))}%`;
+    };
+    place(node);
+    const data = () => working ?? readChartData(current.attrs, legacy);
 
-export function chartPalette(): string[] {
-  return [1, 2, 3, 4, 5, 6].map((i) => cssVar(`--chart-${i}`) || '#2d5b4e');
-}
+    const draw = (force = false) => {
+      const d = data();
+      const key = JSON.stringify([d, [...hidden], document.documentElement.dataset.theme ?? '', getComputedStyle(fig).getPropertyValue('--subj')]);
+      if (!force && key === drawn) return;
+      drawn = key;
+      fig.dataset.kind = d.kind;
+      titleEl.textContent = d.title || chartKindName(d.kind);
+      subEl.textContent = d.subtitle;
+      subEl.hidden = !d.subtitle;
+      const out = renderChart(d, screenInk(fig), { hidden, animate: first && !reducedMotion(), desk: deskColours() });
+      first = false;
+      canvas.innerHTML = out.svg;
+      tips.hide();
+      // pie and donut name their slices inside the picture; scatter and polar need no chips
+      const chips = d.kind === 'pie' || d.kind === 'donut' || d.kind === 'polar' || isXY(d.kind) || out.legend.length < 2 ? [] : out.legend;
+      legendEl.replaceChildren(
+        ...chips.map((c, i) => {
+          const b = h('button', { type: 'button', class: 'chart-chip', 'aria-pressed': String(!hidden.has(i)) }, h('i', { style: `background:${c.colour}`, 'aria-hidden': 'true' }), c.name || `Series ${i + 1}`);
+          b.addEventListener('click', () => {
+            if (hidden.has(i)) hidden.delete(i);
+            else if (hidden.size < chips.length - 1) hidden.add(i);
+            draw();
+          });
+          return b;
+        })
+      );
+      legendEl.hidden = !chips.length;
+      foot.textContent = d.source ? (/^source\b/i.test(d.source) ? d.source : `Source: ${d.source}`) : '';
+      foot.hidden = !d.source;
+    };
 
-/** Chart.js config shared by the editor view and the PDF export. */
-export const PRINT_PALETTE = ['#2d5b4e', '#c27c2c', '#4f6fa8', '#a3475a', '#6b8f3a', '#7a5ea8'];
+    const commit = (d: ChartData) => {
+      const pos = typeof getPos === 'function' ? getPos() : undefined;
+      if (pos === undefined) return;
+      const attrs = { ...current.attrs, ...Object.fromEntries(CHART_ATTRS.map((k) => [k, structuredClone(d[k])])) };
+      const tr = editor.state.tr;
+      if (current.type.name === 'chartBlock') {
+        // the first edit turns a 0.12 chart into a 0.13 one, in place, in one undo step
+        tr.replaceWith(pos, pos + current.nodeSize, editor.schema.nodes.chart.create({ ...attrs, align: current.attrs.align, width: current.attrs.width }));
+        tr.setSelection(NodeSelection.create(tr.doc, pos));
+      } else tr.setNodeMarkup(pos, undefined, attrs);
+      editor.view.dispatch(tr);
+    };
 
-export function chartConfig(
-  d: ChartData,
-  opts: { animate?: boolean; text?: string; grid?: string; palette?: string[]; surface?: string } = {}
-): ChartConfiguration {
-  const colors = opts.palette ?? chartPalette();
-  const text = opts.text ?? cssVar('--fg');
-  const grid = opts.grid ?? cssVar('--line');
-  const pie = d.kind === 'pie';
-  const series = pie ? d.series.slice(0, 1) : d.series;
-  return {
-    type: d.kind,
-    data: {
-      labels: d.labels,
-      datasets: series.map((s, i) => ({
-        label: s.name,
-        data: d.labels.map((_, j) => Number(s.values[j]) || 0),
-        backgroundColor: pie ? d.labels.map((_, j) => colors[j % colors.length]) : colors[i % colors.length],
-        borderColor: pie ? opts.surface ?? (cssVar('--surface') || '#fff') : colors[i % colors.length],
-        borderWidth: pie ? 2 : d.kind === 'line' ? 2.5 : 0,
-        borderRadius: d.kind === 'bar' ? 4 : 0,
-        pointRadius: d.kind === 'line' ? 4 : 0,
-        tension: 0
-      }))
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: opts.animate === false ? false : { duration: 250 },
-      color: text,
-      plugins: {
-        legend: { display: pie || series.length > 1, labels: { color: text, boxWidth: 14 } },
-        tooltip: { enabled: true }
+    // ---------- inline data editor, with the chart redrawn as he types ----------
+    const openPanel = () => {
+      working = structuredClone(readChartData(current.attrs, legacy));
+      const d = working;
+      const live = () => draw();
+      const input = (value: string, label: string, set: (v: string) => void, placeholder = '') => {
+        const i = h('input', { value, placeholder, 'aria-label': label });
+        i.value = value;
+        i.addEventListener('input', () => {
+          set(i.value);
+          live();
+        });
+        return i;
+      };
+      const render = () => {
+        panel.replaceChildren();
+        const row1 = h('div', { class: 'chart-row' }, input(d.title, 'Chart title', (v) => (d.title = v), 'Chart title'));
+        const kind = h('select', { 'aria-label': 'Chart type' });
+        for (const k of CHART_KINDS) kind.append(h('option', { value: k.kind }, k.name));
+        kind.value = d.kind;
+        kind.addEventListener('change', () => {
+          d.kind = kind.value as ChartKind;
+          if (isXY(d.kind)) while (d.series.length < (d.kind === 'bubble' ? 3 : 2)) d.series.push({ name: d.series.length === 1 ? 'Y' : 'Size', values: d.labels.map(() => 1) });
+          render();
+          live();
+        });
+        const row2 = h(
+          'div',
+          { class: 'chart-row2' },
+          h('label', { class: 'fig-field' }, h('span', {}, 'Type'), kind),
+          h('label', { class: 'fig-field grow' }, h('span', {}, 'Subtitle'), input(d.subtitle, 'Subtitle', (v) => (d.subtitle = v), 'What the numbers are')),
+          h('label', { class: 'fig-field grow' }, h('span', {}, 'Source'), input(d.source, 'Source', (v) => (d.source = v), 'e.g. Economic Survey 2024')),
+          h('label', { class: 'fig-field small' }, h('span', {}, 'Unit'), input(d.unit, 'Unit', (v) => (d.unit = v), '%'))
+        );
+        const row3 = h(
+          'div',
+          { class: 'chart-row3' },
+          palettePicker(fig, d.palette, (p) => {
+            d.palette = p;
+            live();
+          }),
+          segmented('Numbers', [
+            { id: 'all', label: 'Numbers on chart' },
+            { id: 'tap', label: 'Numbers on tap' }
+          ], d.values, (v) => {
+            d.values = v;
+            live();
+          })
+        );
+
+        const xy = isXY(d.kind);
+        const table = h('table', { class: 'chart-grid' });
+        const hr = h('tr', {}, h('th', {}, xy ? 'Point' : 'Label'));
+        d.series.forEach((s, si) => {
+          const label = xy ? ['Across (x) name', 'Up (y) name', 'Size name'][si] ?? `Series ${si + 1} name` : `Series ${si + 1} name`;
+          hr.append(h('th', {}, input(s.name, label, (v) => (s.name = v))));
+        });
+        table.append(hr);
+        d.labels.forEach((label, li) => {
+          const tr = h('tr', {}, h('td', {}, input(label, `Row ${li + 1} label`, (v) => (d.labels[li] = v))));
+          d.series.forEach((s, si) => {
+            const v = h('input', { type: 'number', inputmode: 'decimal', step: 'any', 'aria-label': `${label || 'Row ' + (li + 1)}, ${s.name || 'series ' + (si + 1)}` });
+            v.value = String(s.values[li] ?? 0);
+            v.addEventListener('input', () => {
+              s.values[li] = Number(v.value) || 0;
+              live();
+            });
+            tr.append(h('td', {}, v));
+          });
+          table.append(tr);
+        });
+        const note = oneSeries(d.kind) && d.series.length > 1 ? h('p', { class: 'chart-note' }, `A ${chartKindName(d.kind).toLowerCase()} chart shows only the first series.`) : d.kind === 'combo' ? h('p', { class: 'chart-note' }, 'The first series is drawn as bars, the others as lines with their own scale on the right.') : null;
+        const actions = h(
+          'div',
+          { class: 'chart-actions' },
+          panelBtn('Add row', () => {
+            d.labels.push(xy ? `Point ${d.labels.length + 1}` : `Item ${d.labels.length + 1}`);
+            d.series.forEach((s) => s.values.push(0));
+            render();
+            live();
+          }),
+          panelBtn('Remove last row', () => {
+            if (d.labels.length > 1) {
+              d.labels.pop();
+              d.series.forEach((s) => s.values.pop());
+              render();
+              live();
+            }
+          }),
+          ...(xy
+            ? []
+            : [
+                panelBtn('Add series', () => {
+                  d.series.push({ name: `Series ${d.series.length + 1}`, values: d.labels.map(() => 0) });
+                  render();
+                  live();
+                }),
+                panelBtn('Remove last series', () => {
+                  if (d.series.length > 1) {
+                    d.series.pop();
+                    render();
+                    live();
+                  }
+                })
+              ]),
+          panelBtn('Cancel', () => close(false)),
+          panelBtn('Done', () => close(true), 'primary')
+        );
+        panel.append(row1, row2, row3, h('div', { class: 'chart-grid-wrap' }, table), ...(note ? [note] : []), actions);
+      };
+      render();
+      panel.hidden = false;
+      editBtn.hidden = true;
+      fig.classList.add('is-editing');
+    };
+    const close = (save: boolean) => {
+      const d = working;
+      working = null;
+      panel.hidden = true;
+      editBtn.hidden = false;
+      fig.classList.remove('is-editing');
+      if (save && d) commit(d);
+      else draw();
+    };
+    editBtn.addEventListener('click', openPanel);
+
+    const offInk = onInkChange(() => draw(true));
+    requestAnimationFrame(() => draw());
+
+    return {
+      dom: fig,
+      update(n: PMNode) {
+        if (n.type !== current.type) return false;
+        current = n;
+        place(n);
+        draw();
+        return true;
       },
-      scales: pie
-        ? {}
-        : {
-            x: { ticks: { color: text }, grid: { display: false }, border: { color: grid } },
-            y: { beginAtZero: true, ticks: { color: text }, grid: { color: grid }, border: { display: false } }
-          }
-    }
-  } as ChartConfiguration;
-}
-
-export function readChart(a: Partial<ChartData>): ChartData {
-  return {
-    kind: (a.kind as ChartKind) ?? 'bar',
-    title: a.title ?? '',
-    labels: Array.isArray(a.labels) ? [...a.labels] : [...DEFAULT_CHART.labels],
-    series: Array.isArray(a.series) ? a.series.map((s) => ({ name: s.name, values: [...s.values] })) : structuredClone(DEFAULT_CHART.series)
+      selectNode() {
+        fig.classList.add('is-selected');
+      },
+      deselectNode() {
+        fig.classList.remove('is-selected');
+      },
+      stopEvent(e: Event) {
+        const t = e.target as HTMLElement | null;
+        return !!t && (panel.contains(t) || t === editBtn || legendEl.contains(t));
+      },
+      ignoreMutation() {
+        return true;
+      },
+      destroy() {
+        offInk();
+      }
+    };
   };
 }
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text !== undefined) e.textContent = text;
-  return e;
-}
+const parseChart = (e: HTMLElement | string) => {
+  try {
+    return JSON.parse((e as HTMLElement).dataset.chart || '{}');
+  } catch {
+    return false;
+  }
+};
 
+/** 0.13 charts. */
+export const ChartNode = Node.create({
+  name: 'chart',
+  group: 'block',
+  atom: true,
+  draggable: true,
+  selectable: true,
+  addAttributes() {
+    const d = sampleChart('column');
+    return {
+      kind: { default: d.kind },
+      title: { default: '' },
+      subtitle: { default: '' },
+      source: { default: '' },
+      labels: { default: d.labels },
+      series: { default: d.series },
+      palette: { default: 'desk' },
+      values: { default: 'all' },
+      unit: { default: '' },
+      align: { default: 'center', rendered: false },
+      width: { default: 100, rendered: false }
+    };
+  },
+  parseHTML: () => [{ tag: 'figure[data-chart2]', getAttrs: (e) => parseChart(e) }],
+  renderHTML: ({ node, HTMLAttributes }) => ['figure', mergeAttributes(HTMLAttributes, { 'data-chart2': '', 'data-chart': JSON.stringify(node.attrs) })],
+  addNodeView() {
+    return chartView(false);
+  }
+});
+
+/** Charts written by 0.10 – 0.12 (bar, line, pie). Shown with the 0.13 look; saved unchanged until edited. */
 export const ChartBlock = Node.create({
   name: 'chartBlock',
   group: 'block',
   atom: true,
   draggable: true,
   selectable: true,
-
   addAttributes() {
     return {
-      kind: { default: DEFAULT_CHART.kind },
-      title: { default: DEFAULT_CHART.title },
-      labels: { default: DEFAULT_CHART.labels },
-      series: { default: DEFAULT_CHART.series },
+      kind: { default: 'bar' },
+      title: { default: 'Untitled chart' },
+      labels: { default: ['Item 1', 'Item 2', 'Item 3'] },
+      series: { default: [{ name: 'Value', values: [3, 5, 2] }] },
       // 0.11: left / right float the chart with text beside it, like a picture; width in % of the column.
       align: { default: 'center', rendered: false },
       width: { default: 100, rendered: false }
     };
   },
-
-  parseHTML() {
-    return [
-      {
-        tag: 'figure[data-chart]',
-        getAttrs: (e) => {
-          try {
-            return JSON.parse((e as HTMLElement).dataset.chart || '{}');
-          } catch {
-            return false;
-          }
-        }
-      }
-    ];
-  },
-
-  renderHTML({ node, HTMLAttributes }) {
-    return ['figure', mergeAttributes(HTMLAttributes, { 'data-chart': JSON.stringify(node.attrs) })];
-  },
-
+  parseHTML: () => [{ tag: 'figure[data-chart]:not([data-chart2])', getAttrs: (e) => parseChart(e) }],
+  renderHTML: ({ node, HTMLAttributes }) => ['figure', mergeAttributes(HTMLAttributes, { 'data-chart': JSON.stringify(node.attrs) })],
   addNodeView() {
-    return ({ node, getPos, editor }) => {
-      let current = node;
-      let chart: Chart | null = null;
-      const fig = el('figure', 'chart-block');
-      const head = el('div', 'chart-head');
-      const titleEl = el('strong', 'chart-title');
-      const editBtn = el('button', 'chart-edit', 'Edit data');
-      editBtn.type = 'button';
-      head.append(titleEl, editBtn);
-      const wrap = el('div', 'chart-canvas');
-      const canvas = el('canvas');
-      canvas.setAttribute('role', 'img');
-      wrap.append(canvas);
-      const panel = el('div', 'chart-panel');
-      panel.hidden = true;
-      fig.append(head, wrap, panel);
-
-      const place = (n: typeof node) => {
-        const align = ['left', 'right'].includes(n.attrs.align) ? n.attrs.align : 'center';
-        fig.dataset.align = align;
-        fig.style.width = align === 'center' ? '' : `${Math.min(100, Math.max(20, Number(n.attrs.width) || 50))}%`;
-      };
-      place(node);
-      const draw = (d: ChartData) => {
-        titleEl.textContent = d.title || 'Chart';
-        canvas.setAttribute('aria-label', `${d.kind} chart: ${d.title}`);
-        chart?.destroy();
-        chart = new Chart(canvas, chartConfig(d));
-      };
-
-      const commit = (d: ChartData) => {
-        const pos = typeof getPos === 'function' ? getPos() : undefined;
-        if (pos === undefined) return;
-        editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...current.attrs, ...d }));
-      };
-
-      // ---------- inline data editor ----------
-      const openPanel = () => {
-        const d = readChart(current.attrs);
-        const render = () => {
-          panel.replaceChildren();
-          const row1 = el('div', 'chart-row');
-          const kind = el('select');
-          kind.setAttribute('aria-label', 'Chart type');
-          for (const [v, t] of [
-            ['bar', 'Bar'],
-            ['line', 'Line'],
-            ['pie', 'Pie']
-          ]) {
-            const o = el('option', undefined, t);
-            o.value = v;
-            kind.append(o);
-          }
-          kind.value = d.kind;
-          kind.addEventListener('change', () => {
-            d.kind = kind.value as ChartKind;
-            render();
-          });
-          const title = el('input');
-          title.value = d.title;
-          title.placeholder = 'Chart title';
-          title.setAttribute('aria-label', 'Chart title');
-          title.addEventListener('input', () => (d.title = title.value));
-          row1.append(kind, title);
-
-          const gridWrap = el('div', 'chart-grid-wrap');
-          const table = el('table', 'chart-grid');
-          const hr = el('tr');
-          hr.append(el('th', undefined, 'Label'));
-          d.series.forEach((s, si) => {
-            const th = el('th');
-            const inp = el('input');
-            inp.value = s.name;
-            inp.setAttribute('aria-label', `Series ${si + 1} name`);
-            inp.addEventListener('input', () => (s.name = inp.value));
-            th.append(inp);
-            hr.append(th);
-          });
-          table.append(hr);
-          d.labels.forEach((label, li) => {
-            const tr = el('tr');
-            const td = el('td');
-            const inp = el('input');
-            inp.value = label;
-            inp.setAttribute('aria-label', `Row ${li + 1} label`);
-            inp.addEventListener('input', () => (d.labels[li] = inp.value));
-            td.append(inp);
-            tr.append(td);
-            d.series.forEach((s, si) => {
-              const c = el('td');
-              const v = el('input');
-              v.type = 'number';
-              v.inputMode = 'decimal';
-              v.step = 'any';
-              v.value = String(s.values[li] ?? 0);
-              v.setAttribute('aria-label', `${label || 'Row ' + (li + 1)}, ${s.name || 'series ' + (si + 1)}`);
-              v.addEventListener('input', () => (s.values[li] = Number(v.value) || 0));
-              c.append(v);
-              tr.append(c);
-            });
-            table.append(tr);
-          });
-          gridWrap.append(table);
-
-          const btn = (t: string, fn: () => void, cls = '') => {
-            const b = el('button', cls, t);
-            b.type = 'button';
-            b.addEventListener('click', fn);
-            return b;
-          };
-          const actions = el('div', 'chart-actions');
-          actions.append(
-            btn('Add row', () => {
-              d.labels.push(`Item ${d.labels.length + 1}`);
-              d.series.forEach((s) => s.values.push(0));
-              render();
-            }),
-            btn('Remove last row', () => {
-              if (d.labels.length > 1) {
-                d.labels.pop();
-                d.series.forEach((s) => s.values.pop());
-                render();
-              }
-            }),
-            btn('Add series', () => {
-              d.series.push({ name: `Series ${d.series.length + 1}`, values: d.labels.map(() => 0) });
-              render();
-            }),
-            btn('Remove last series', () => {
-              if (d.series.length > 1) {
-                d.series.pop();
-                render();
-              }
-            }),
-            btn('Cancel', () => {
-              panel.hidden = true;
-              editBtn.hidden = false;
-            }),
-            btn(
-              'Done',
-              () => {
-                panel.hidden = true;
-                editBtn.hidden = false;
-                commit(d);
-              },
-              'primary'
-            )
-          );
-          const note = d.kind === 'pie' && d.series.length > 1 ? el('p', 'chart-note', 'A pie chart shows only the first series.') : null;
-          panel.append(row1, gridWrap, ...(note ? [note] : []), actions);
-        };
-        render();
-        panel.hidden = false;
-        editBtn.hidden = true;
-      };
-      editBtn.addEventListener('click', openPanel);
-
-      const media = window.matchMedia('(prefers-color-scheme: dark)');
-      const onTheme = () => draw(readChart(current.attrs));
-      media.addEventListener('change', onTheme);
-      window.addEventListener('themechange', onTheme);
-      // Draw after the node is in the document so the canvas has a size.
-      requestAnimationFrame(() => draw(readChart(current.attrs)));
-
-      return {
-        dom: fig,
-        update(n) {
-          if (n.type.name !== 'chartBlock') return false;
-          current = n;
-          place(n);
-          draw(readChart(n.attrs));
-          return true;
-        },
-        selectNode() {
-          fig.classList.add('is-selected');
-        },
-        deselectNode() {
-          fig.classList.remove('is-selected');
-        },
-        stopEvent(e) {
-          const t = e.target as HTMLElement | null;
-          return !!t && (panel.contains(t) || t === editBtn);
-        },
-        ignoreMutation() {
-          return true;
-        },
-        destroy() {
-          media.removeEventListener('change', onTheme);
-          window.removeEventListener('themechange', onTheme);
-          chart?.destroy();
-        }
-      };
-    };
+    return chartView(true);
   }
 });

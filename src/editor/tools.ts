@@ -53,17 +53,34 @@ export function sweepMark(e: Editor) {
     range.setStart(a.node, a.offset);
     range.setEnd(b.node, b.offset);
     const rects = [...range.getClientRects()].filter((r) => r.width > 2).slice(0, 12);
-    e.view.dispatch(e.state.tr.setMeta(sweepKey, { from, to }).setMeta('addToHistory', false));
+    const over = { v: false };
+    e.view.dispatch(e.state.tr.setMeta(sweepKey, { from, to, over }).setMeta('addToHistory', false));
     const layers = rects.map((r) =>
       h('div', { class: 'sweep', style: `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`, 'aria-hidden': 'true' })
     );
     document.body.append(...layers);
     window.setTimeout(() => {
       layers.forEach((l) => l.remove());
-      if (!e.isDestroyed) e.view.dispatch(e.state.tr.setMeta(sweepKey, null).setMeta('addToHistory', false));
+      over.v = true;
+      // Clear now only if ProseMirror has already read the DOM selection; otherwise the update would put the old
+      // selection back over the new one (the bubble never shows). The next transaction clears it then.
+      if (!e.isDestroyed && sweepKey.getState(e.state)?.over === over && selectionRead(e))
+        e.view.dispatch(e.state.tr.setMeta(sweepKey, null).setMeta('addToHistory', false));
     }, 230);
   } catch {
     /* the sweep is decoration only */
+  }
+}
+
+/** True when the DOM selection is outside the editor or is the one in the editor state (no selectionchange pending). */
+function selectionRead(e: Editor) {
+  const d = document.getSelection();
+  if (!d || !d.anchorNode || !d.focusNode || !e.view.dom.contains(d.anchorNode)) return true;
+  try {
+    const { anchor, head } = e.state.selection;
+    return e.view.posAtDOM(d.anchorNode, d.anchorOffset) === anchor && e.view.posAtDOM(d.focusNode, d.focusOffset) === head;
+  } catch {
+    return false;
   }
 }
 
@@ -433,10 +450,10 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
   const inTable = (e: Editor) => e.isActive('table');
   const selectedBlock = (e: Editor, name?: string) => {
     const s = e.state.selection;
-    return s instanceof NodeSelection && (name ? s.node.type.name === name : ['imageBlock', 'chartBlock', 'sketchBlock'].includes(s.node.type.name));
+    return s instanceof NodeSelection && (name ? s.node.type.name === name : ['imageBlock', 'chartBlock', 'chart', 'sketchBlock', 'diagram', 'mindMap'].includes(s.node.type.name));
   };
   /** A selected picture, sketch or chart (0.11): they float with text beside them. Pictures and sketches take a caption. */
-  const FLOATS = ['imageBlock', 'sketchBlock', 'chartBlock'];
+  const FLOATS = ['imageBlock', 'sketchBlock', 'chartBlock', 'chart'];
   const selectedFloat = (e: Editor) => {
     const s = e.state.selection;
     return s instanceof NodeSelection && FLOATS.includes(s.node.type.name) ? s : null;
@@ -608,7 +625,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     btn('+ Line below', 'Add a line below the picture', (e) => addLineBy(e, 'below'), 'tb'),
     captionInput
   );
-  const removeBlock = btn('Remove', 'Remove selected image or chart', (e) => e.chain().focus().deleteSelection().run(), 'tb danger');
+  const removeBlock = btn('Remove', 'Remove selected picture, chart or diagram', (e) => e.chain().focus().deleteSelection().run(), 'tb danger');
   const blockOps = h('div', { class: 'ctx-group', role: 'group', 'aria-label': 'Selected block' }, removeBlock);
   // PYQ details: year, paper, marks (written when chosen, or when the year box is left).
   const pyqYear = h('input', { type: 'text', class: 'ctx-input pyq-year', id: 'pyq-year', inputmode: 'numeric', maxlength: 4, placeholder: 'Year', 'aria-label': 'PYQ year' });
@@ -712,11 +729,11 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
       const float = selectedFloat(e);
       imageOps.hidden = !float;
       const type = float?.node.type.name;
-      const label = type === 'sketchBlock' ? 'Sketch' : type === 'chartBlock' ? 'Chart' : 'Image';
+      const label = type === 'sketchBlock' ? 'Sketch' : type === 'chartBlock' || type === 'chart' ? 'Chart' : 'Image';
       imageLabel.textContent = label;
       imageOps.setAttribute('aria-label', label);
       cropBtn.hidden = type !== 'imageBlock';
-      captionInput.hidden = type === 'chartBlock'; // a chart has its own title
+      captionInput.hidden = type === 'chartBlock' || type === 'chart'; // a chart has its own title
       blockOps.hidden = !selectedBlock(e);
       const kind = calloutKindAt(e);
       calloutOps.hidden = !kind;

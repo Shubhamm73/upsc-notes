@@ -12,7 +12,7 @@ import { panelTitle, readPanelLook, type PanelLook } from '../lib/looks';
  * Two columns hold exactly two { type: 'panelColumn' } children.
  * An older app (0.11) doesn't know these nodes: it opens such a section read-only, untouched.
  */
-const INSIDE = 'paragraph | heading | bulletList | orderedList | blockquote | table | imageBlock | chartBlock | sketchBlock | callout | horizontalRule';
+const INSIDE = 'paragraph | heading | bulletList | orderedList | blockquote | table | imageBlock | chartBlock | chart | diagram | mindMap | sketchBlock | callout | horizontalRule';
 
 export const PanelColumn = Node.create({
   name: 'panelColumn',

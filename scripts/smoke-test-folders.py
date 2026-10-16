@@ -426,7 +426,7 @@ with sync_playwright() as p:
     dl.value.save_as(bpath)
     bk = json.loads(bpath.read_text())
     here = rows(page, "folders")
-    check(bk["format"] == 6 and bk["counts"]["folders"] == len(here) and len(bk["folders"]) == len(here), f"backup format 6 carries every folder, deleted ones too ({len(here)})")
+    check(bk["format"] == 7 and bk["counts"]["folders"] == len(here) and len(bk["folders"]) == len(here), f"backup format 7 carries every folder, deleted ones too ({len(here)})")
     check(any(f["deletedAt"] for f in bk["folders"]), "deleted folders are in the backup (so a merge can't bring them back)")
 
     fresh = browser.new_context(viewport={"width": 1280, "height": 800})
