@@ -1,0 +1,56 @@
+# UPSC Notes: roadmap (moved out of CLAUDE.md; READ before starting any release)
+
+## Approved roadmap (all decisions confirmed by owner on 12 Oct 2026)
+### UI-2 — Writing canvas ✅ done in 0.7.0 (see "UI-2 as built" below)
+- Full-page canvas: 34–36 px serif title; subject/topic/template as small chips under it; ~72-char column; details tucked away.
+- **Slash menu**: `/` at line start → Heading, Bullet, Dash, Numbered, Table, Chart, Image, Sketch (placeholder until UI-4), Callout, Divider; filters as you type; Enter inserts.
+- **Floating toolbar** on text selection: Bold, Italic, Underline, **Mark** (highlight), Link. Replace the permanent 20-button toolbar.
+- **Touch bottom bar** in portrait above the keyboard: + (insert), Mark, List, Undo, Done.
+- **Focus mode** (Ctrl + .): hide everything but the text; dim non-active paragraphs.
+- **Templates** on New note: GS answer (Intro, Body, Way forward), Topic sheet (Key terms, Articles and cases, Data, Examples), Current affairs (News, Background, Syllabus link, Prelims facts, Mains angle), Blank.
+- **UPSC callouts** (new TipTap node): Article, Case, Data, Example, Way forward — icon + colour, exported to PDF, searchable.
+- **Outline rail** (right edge, landscape): section headings, tap to jump, long-press drag to reorder, collapse sections; key-line count per section. Replaces ↑↓ buttons.
+- **Answer-length meter** for GS answer template (150 / 250 word marks).
+- **Live insight count** in header ("5 key lines") as highlights are added.
+- Keep: autosave, sections data model (`note.sections[]` with TipTap JSON), quick insights, per-note font, PDF export of all new blocks.
+- Gate: a week of real notes in the new canvas, nothing lost.
+
+### UI-3 — Review & recall ✅ done in 0.8.0 (see "UI-3 as built" above)
+Today queue → full-screen **review session**: one card at a time; card types: insight (front = note title + section, back = highlighted line), vocabulary, whole note. Ratings **Again / Hard / Easy** (Again = later in session, Hard = keep interval, Easy = next interval); swipe left/right or 64 px buttons; session summary (items, time, streak, subjects). Per-card review state must be stored and carried in backups (new Dexie version). Streak celebrations at 7/30/100 days, quiet; motion spec below.
+
+Decisions taken at build time (owner, 12 Oct 2026): whole-note card has Again/Hard/Easy (Easy = Mark reviewed); insight front blanks the line inside its paragraph; backup format 2; one-level undo; Settings switch for streak moments; session = 40 key lines/words + every due note; smoke-test-ui1's Start review checks now follow the session.
+
+### Six-asks plan ← NEXT (owner's six asks after 0.8.3; plan artifact https://claude.ai/artifact/YA51kuXRmKJg1KN56w4HJR — read it with the Artifact tool for the mockups and full detail)
+**Decisions (owner, 13 Oct 2026: all recommended):** 1 order as drawn (renumbered below, 0.9.0 was taken by Sketch) · 2 deleting a folder sends its notes to Trash (30 days, restorable; dialog says how many; you can't delete the last subject under a main subject, there's always "General") · 3 words: "Add word to today" files it (makes month/date if missing), manual months and dates also allowed · 4 Google Drive backup: **yes**, Google sign-in for backup only, owner creates the Google Cloud OAuth client from our steps · 5 default schedule: every 2 days, keep the last 10 · 6 a note's own look = cover, headings, font, accent; background and text follow the app theme · 7 UI-4 (pen marking, haptics, speed, accessibility) **after** these six asks.
+
+Every release: same per-step routine as UI-4 below (baseline → state understanding as a table with proposals → wait for "go" → build → debug → upgrade test from the previous release → bump → update this file → commit, push, fast-forward main → confirm live → suites on the live site → end with the next step's prompt with real hashes). **Schema changes first** so later features build on the final data shape.
+
+| Step | Release | Scope (from the plan) | Data change | Status |
+|---|---|---|---|---|
+| R1 | 0.9.1 | **Share backup fix**: Share appears on the tablet and goes to Drive via the share sheet (stopgap until R3) | none | ☑ done |
+| R2 | 0.10.0 | **Folders**: Notes → main subject (GS1 … Current affairs, Others) → subject (History, Society …) → notes, with New note. Words → month → date → words. Each level: + add, Edit mode (rename by tapping the name, delete with red −, reorder by drag handle). Subjects inherit the main subject's colour. Breadcrumb (Notes › GS1 › History), Android back goes up one level. Note ⋯ → "Move to…". Recent row; Ctrl+K, Today's Continue writing still open a note in one tap. | **Dexie v4** `folders` (id, parent, name, colour, order, kind notes/words); upgrade rewrites no note: the 8 subjects become main subjects with one "General" each, a note with no folder shows under its old subject's General; words filed by the day added. **Backup format 4** carries folders; import maps formats 1–3 like the upgrade. Full upgrade test from 0.9.1 with real-size data. | ☑ done (see "R2 as built") |
+| R3 | 0.11 | **Google Drive backup and restore**: Backup & storage → Connect Google Drive (GIS sign-in, `drive.file`) → folder ("UPSC Notes backups" made for him, or Google Picker) → schedule (every 2 days default; also right after a big change: on) → keep last 10. Backs up when due the next time the app is open and online (a web app can't run closed). Token lasts 1 h; renew on next tap. Missed > 2× schedule → More's Backup row in warning colour (no home banner). "Restore from Google Drive" on an empty app: pick a backup → merge (nothing deleted). Settings (theme, font, width, streak moments …) go into the backup. Day 1: test the sign-in popup in the installed app on the tablet; fallback = full-page redirect sign-in. Needs the owner's Google Cloud client first (give him the ~15-minute steps). | backup format +1: settings (and later saved styles, templates) | ☑ done (see "R3 as built") |
+| R4 | 0.12 | **Tables, headings and containers**: raised table card, Insert → Table asks rows × columns (grid drag up to 10 × 8, steppers up to 50 × 12), header row + bold first column on; "4 × 3 ▾" size button in the table bar (warns before deleting cells with text; one undo step); 5 styles Clean (default), Banded, Lined, Boxed, Minimal; colour follows subject; optional caption; number columns right-aligned in a fixed-width font. Heading look (12 looks, 13 colours, fill soft/medium/solid, corners, 5 icons, fit/full width, left/centre), "Same as last", "Save as my style". Containers: select blocks → Put in container (soft panel, titled panel, sticky note, framed, quote, two-column; callouts become presets); Remove container keeps the text. PDF prints all of it (tilt/shadows flat). | none (unindexed attrs: table `style/color/caption`, heading `look`, new `panel` node; saved styles in `meta`, in the backup) | ☐ |
+| R5 | 0.13 | **Charts, diagrams and mind map**: Insert → Chart gallery, 12 data charts ("from numbers") + 8 diagrams ("from words": timeline, process/flowchart, cycle, Venn, comparison …) drawn by the app; mind map with unlimited nodes (+ Child / Tab, + Sibling / Enter, drag, Tidy up, label/colour/shape per node, long-press folds a branch, pinch zoom, two-finger pan, radial/tree layouts). New chart look: subject colour family or 6 palettes, rounded bars, light grid, values on tap, chip legend, title + source; draw-in 300 ms. Mind-map text searchable and markable. PDF: crisp 2× pictures, big mind maps on their own page. Ask the owner to resend his chart screenshot (it never came through). | none (`chartBlock` more kinds; new `diagram` and `mindMap` nodes, JSON in the section) | ☐ |
+| R6 | 0.14 | **Themes and templates**: 9 themes (Study desk, Night, Slate, True black, Sepia, Ocean, Forest night, Rose, High contrast) + Custom (accent, roundness, density); note ⋯ → "Note look" (cover, heading style set, font, accent) for this note / a whole subject / everywhere; 19 templates (15 new) + "Save as template" (My templates). PDFs keep a print-safe palette. | none (`note.look` unindexed; templates in `meta`; theme also in the backup) | ☐ |
+| then | 0.15+ | UI-4 remaining steps U4-2, U4-3, U4-4 (table below), renumbered at the time | | ☐ |
+
+### UI-4 — S Pen & finishing (U4-1 done in 0.9.0; the rest waits until after the six-asks plan)
+Sketch block (pressure, palm rejection, stored as image, in PDF), mark with the pen, optional haptics (setting), speed pass on a 5,000-word note, accessibility pass, PDF for new blocks.
+
+**UI-4 session plan** (written 13 Oct 2026; U4-1 shipped as 0.9.0. **U4-2…U4-4 are deferred until after R1–R6 above** (owner, 13 Oct 2026); their versions get renumbered then. A U4-2 proposal was drafted in a session on 13 Oct and nothing was built: pen drag over text = highlight with whole-word snapping and a line lock, second pass or side button un-marks, one undo step per stroke, tap = caret, long-press = select word; haptics off by default, 8–20 ms on pen mark, ratings, Mark reviewed, milestones; a Settings "Mark text with the S Pen" escape switch).
+Every step: baseline first (all suites + upgrade test from the previous release; stop if red) → state understanding as a table with a
+proposal for each open decision → wait for "go" → build → debug (stress any failing test to a root cause) → upgrade test from the
+previous release → bump version → update this file (tick the step, add "as built" notes and gotchas) → commit, push the branch,
+fast-forward main → confirm the live version → run all suites against the live site → end with the next step's prompt, real commit hashes filled in.
+
+| Step | Scope | Model · effort | Version | Status |
+|---|---|---|---|---|
+| U4-1 | **Sketch block**: replaces "Sketch · coming soon"; S Pen pressure, palm rejection (only pen draws, a finger scrolls), eraser/undo/clear, stored (image, and strokes if decided), backup, PDF | Opus · high | 0.9.0 | ☑ done (see "U4-1 as built") |
+| U4-2 | **Mark with the pen** (highlight text with the S Pen) + **optional haptics** (Settings switch, off by default) | Opus · medium | after R6 | ☐ deferred |
+| U4-3 | **Speed pass** on a 5,000-word note (open, typing, scroll, autosave, live counts, PDF, review), measured before/after at 4× CPU throttle | Opus · high | after R6 | ☐ deferred |
+| U4-4 | **Accessibility pass** (axe, keyboard-only, contrast day/night, names, targets) + **PDF audit of every block** + close UI-4 | Sonnet · medium | after R6 | ☐ deferred |
+
+### Motion spec (UI-2/UI-3)
+Open note: card expands to page 240 ms · Save: dot pulse then ✓ 160 ms · Highlight: marker sweep 200 ms · Mark reviewed: highlighted lines fly up into Quick insights 300 ms · Slash menu: fade + rise 4 px 120 ms · Flashcard flip 240 ms · Rating: slide out 200 ms · Summary rings fill 300 ms · Delete forever: row collapse 160 ms, no celebration.
+
