@@ -118,6 +118,19 @@ export function lookTexts(doc: DocNode | undefined): string[] {
 /** Words in a note's sections (title, headings and the reflection fields are not counted). */
 export function wordCount(n: Note): number {
   let total = 0;
-  for (const s of n.sections) total += docToText(s.doc).split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+  for (const s of n.sections) total += sectionWords(s.doc);
   return total;
+}
+
+/** 0.17 speed pass: a section's count, remembered per doc object. A saved doc is never changed in place (each edit
+ *  makes a new one), so while typing only the section being edited is counted again, not the whole note. */
+const wordsOf = new WeakMap<DocNode, number>();
+function sectionWords(doc: DocNode | undefined): number {
+  if (doc && typeof doc === 'object') {
+    const hit = wordsOf.get(doc);
+    if (hit !== undefined) return hit;
+  }
+  const c = docToText(doc).split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+  if (doc && typeof doc === 'object') wordsOf.set(doc, c);
+  return c;
 }

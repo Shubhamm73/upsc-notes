@@ -1023,6 +1023,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
 
     // ----- save indicator: dot pulses while typing, ✓ when saved -----
     const setSave = (state: 'editing' | 'saved' | 'error') => {
+      if (state === 'editing' && saveEl.dataset.state === 'editing') return; // 0.17: called on every keystroke
       saveEl.dataset.state = state;
       (saveEl.lastElementChild as HTMLElement).textContent = state === 'editing' ? 'Saving' : state === 'saved' ? 'Saved' : 'Not saved';
       if (state === 'saved') {

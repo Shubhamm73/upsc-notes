@@ -80,7 +80,7 @@ export function startApp(root: HTMLElement, opts: { onUpdate: (cb: () => void) =
       location.hash = hash;
     },
     status: (text, isError = false) => {
-      statusEl.textContent = text;
+      if (statusEl.textContent !== text) statusEl.textContent = text; // 0.17: no DOM write per keystroke when unchanged
       statusEl.classList.toggle('error', isError);
     },
     toast: (text) => {

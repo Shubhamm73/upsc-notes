@@ -1420,6 +1420,68 @@ button.danger-btn { background: var(--error); border-color: var(--error); color:
 .callout[data-corner='square'] { border-radius: 2px; }
 .callout[data-corner='pill'] { border-radius: calc(28px * var(--round, 1)); padding-inline: 22px; }
 
+/* ======================= 0.17: premium surfaces (callouts, tables, containers) ======================= */
+/* One recipe: a lit top edge, a hairline ring, a tinted gradient, and a two-layer shadow that carries the colour. Static paint only. */
+:root {
+  --lift-1: light-dark(0 1px 1px rgba(20, 16, 8, 0.05), 0 1px 1px rgba(0, 0, 0, 0.4)), light-dark(0 2px 6px rgba(20, 16, 8, 0.05), 0 2px 6px rgba(0, 0, 0, 0.3));
+  --lift-2: light-dark(0 1px 1px rgba(20, 16, 8, 0.05), 0 1px 1px rgba(0, 0, 0, 0.4)), light-dark(0 10px 26px -6px rgba(20, 16, 8, 0.16), 0 12px 28px -6px rgba(0, 0, 0, 0.55));
+  --sheen: light-dark(rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.07));
+}
+
+.callout {
+  position: relative;
+  gap: 14px;
+  padding: 14px 18px 14px 16px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--co) 15%, var(--surface)) 0%, color-mix(in srgb, var(--co) 6%, var(--surface)) 100%);
+  box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px color-mix(in srgb, var(--co) 20%, transparent), 0 1px 1px rgba(20, 16, 8, 0.04), 0 8px 20px -8px color-mix(in srgb, var(--co) 38%, transparent);
+}
+/* the accent spine: a rounded bar inside the edge, not a flat border */
+.callout::before { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px; border-radius: 0 4px 4px 0; background: linear-gradient(180deg, var(--co), color-mix(in srgb, var(--co) 55%, transparent)); }
+.callout-icon { display: grid; place-items: center; width: 30px; height: 30px; margin-top: 0; border-radius: 50%; background: color-mix(in srgb, var(--co) 16%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--co) 30%, transparent), 0 1px 2px color-mix(in srgb, var(--co) 25%, transparent); }
+.callout-icon svg { width: 17px; height: 17px; }
+.callout-label { display: inline-block; margin-bottom: 2px; font-size: 0.7rem; letter-spacing: 0.12em; }
+.callout[data-fill='medium'] { background: linear-gradient(135deg, color-mix(in srgb, var(--co) 28%, var(--surface)), color-mix(in srgb, var(--co) 16%, var(--surface))); }
+.callout[data-fill='solid'] { background: linear-gradient(135deg, color-mix(in srgb, var(--co) 40%, var(--surface)), color-mix(in srgb, var(--co) 28%, var(--surface))); }
+.callout[data-corner='square']::before { top: 14px; bottom: 14px; }
+/* the pill's 28px curve would shave the spine's ends at 14px: start it where the edge is straight */
+.callout[data-corner='pill']::before { top: 22px; bottom: 22px; }
+.callout[data-corner='square'] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--co) 28%, transparent), 0 1px 1px rgba(20, 16, 8, 0.05); }
+
+.callout { background-color: color-mix(in srgb, var(--co) 11%, var(--surface)); }
+.callout[data-fill='medium'] { background-color: color-mix(in srgb, var(--co) 22%, var(--surface)); }
+.callout[data-fill='solid'] { background-color: color-mix(in srgb, var(--co) 34%, var(--surface)); }
+
+/* tables: a framed sheet with a tinted header band and quiet row rules */
+.rich .table-card {
+  border-color: color-mix(in srgb, var(--tc) 22%, var(--line));
+  box-shadow: inset 0 1px 0 var(--sheen), var(--lift-2);
+}
+.rich .table-card::before { content: ''; display: block; height: 3px; background: linear-gradient(90deg, var(--tc), color-mix(in srgb, var(--tc) 35%, transparent)); }
+.rich .table-cap { padding: 12px 16px 4px; letter-spacing: -0.005em; }
+.rich .table-card th, .rich .table-card td { padding: 10px 14px; border-bottom-color: color-mix(in srgb, var(--line) 70%, transparent); }
+.rich .table-card th { background: linear-gradient(180deg, color-mix(in srgb, var(--tc) 18%, var(--surface)), color-mix(in srgb, var(--tc) 10%, var(--surface))); font-size: 0.84em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 2px solid color-mix(in srgb, var(--tc) 70%, transparent); }
+/* a mouse or S Pen hover only: on a finger tap :hover sticks to the row */
+@media (hover: hover) { .rich .table-card tbody tr:hover > td { background: color-mix(in srgb, var(--tc) 5%, var(--surface)); } }
+.rich .table-card[data-tstyle='banded'] tr:nth-child(even) > td { background: color-mix(in srgb, var(--tc) 7%, var(--surface)); }
+.rich .table-card[data-tstyle='boxed'] th { background-color: var(--tc); background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.1)); text-transform: none; letter-spacing: 0; font-size: 1em; }
+.rich .table-card[data-tstyle='boxed']::before, .rich .table-card[data-tstyle='minimal']::before, .rich .table-card[data-tstyle='lined']::before { display: none; }
+.rich .table-card[data-tstyle='minimal'] th { text-transform: none; letter-spacing: 0; font-size: 1em; background: transparent; }
+
+/* containers: glass-lit panel with a coloured head band */
+.rich .panel {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--c) calc(var(--t) + 5%), var(--surface)) 0%, color-mix(in srgb, var(--c) calc(var(--t) / 2), var(--surface)) 100%);
+  box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px color-mix(in srgb, var(--c) 18%, transparent), var(--lift-1), 0 10px 24px -12px color-mix(in srgb, var(--c) 40%, transparent);
+}
+.rich .panel-head { background: linear-gradient(180deg, color-mix(in srgb, var(--c) 92%, #fff), var(--c)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 1px 0 color-mix(in srgb, var(--c) 60%, #000); }
+.rich .panel[data-panel='titled'] { box-shadow: inset 0 1px 0 var(--sheen), var(--lift-1); }
+/* the sticky note's head is bare text on the paper: no band edges (rotated, they draw as jagged lines) */
+.rich .panel[data-panel='sticky'] .panel-head { box-shadow: none; }
+.rich .panel[data-panel='framed'] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 30%, transparent), var(--lift-2); }
+.rich .panel[data-panel='quote'] { box-shadow: var(--lift-1); }
+.rich .panel[data-columns='2'] .panel-col + .panel-col { border-left-color: color-mix(in srgb, var(--c) 22%, transparent); }
+@media (forced-colors: active) { .callout, .rich .table-card, .rich .panel { box-shadow: none; border: 1px solid CanvasText; } }
+
 /* ---------- Style panel (beside the note; a sheet at the bottom on a narrow screen) ---------- */
 .look-panel {
   position: fixed;
@@ -1682,3 +1744,227 @@ button.danger-btn { background: var(--error); border-color: var(--error); color:
   .rich :is(.chart-block, .diagram-block, .mindmap-block, .table-card):is([data-align='left'], [data-align='right']) { float: none; width: auto !important; margin: 0.6em 0; }
 }
 @media print { .fig-grip, .fig-size { display: none; } }
+
+/* ======================= 0.17: premium chrome (the app around the note) ======================= */
+/* The "0.17: premium surfaces" recipe above, carried to the chrome: a lit top edge, a hairline ring, a soft face gradient
+   and a two-layer shadow (coloured on filled controls). It lives at the end of the file, not beside the surfaces block,
+   so it wins over the 0.12-0.16 rules it refines at equal specificity. Static paint only: no transitions on shadows or
+   backgrounds, theme tokens only (white/black overlays as in the surfaces block), and background-image (never the
+   `background` shorthand) so every computed background-color stays the theme's. */
+:root {
+  --hair: color-mix(in srgb, var(--fg) 8%, transparent);
+  --face: linear-gradient(180deg, light-dark(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.035)), transparent 42%, light-dark(rgba(20, 16, 8, 0.022), rgba(0, 0, 0, 0.1)));
+  --ctl: linear-gradient(180deg, light-dark(rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.05)), transparent 55%, light-dark(rgba(20, 16, 8, 0.04), rgba(0, 0, 0, 0.14)));
+  --ctl-lift: inset 0 1px 0 var(--sheen), 0 1px 1px light-dark(rgba(20, 16, 8, 0.07), rgba(0, 0, 0, 0.4)), 0 2px 5px -2px light-dark(rgba(20, 16, 8, 0.12), rgba(0, 0, 0, 0.45));
+  --ctl-press: inset 0 1px 3px light-dark(rgba(20, 16, 8, 0.14), rgba(0, 0, 0, 0.5));
+  --fill-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 55%, rgba(0, 0, 0, 0.07));
+  --fill-edge: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  --lift-3: light-dark(0 1px 2px rgba(20, 16, 8, 0.06), 0 1px 2px rgba(0, 0, 0, 0.5)), light-dark(0 22px 48px -14px rgba(20, 16, 8, 0.3), 0 24px 52px -12px rgba(0, 0, 0, 0.72));
+}
+
+/* ---------- buttons: raised bordered controls; filled ones (primary, pressed, Done) carry their colour in the shadow ---------- */
+/* button:where(...) is (0,0,1): later than the base `button` rule, below every class rule, so ghost buttons that set
+   `background: transparent` drop the face by themselves and every state rule still wins. */
+button:where(:not([class]), [class=''], .head-btn, .head-review, .head-more, .tb, .sk-btn, .rv-icon, .rv-undo, .rv-wide, .rate, .danger-outline, .subject-chip, .crop-chip, .size-btn, .install, .focus-exit, .tpl-menu, .chart-edit, .diagram-edit, .mindmap-edit, .stepper button),
+a.button { background-image: var(--ctl); box-shadow: var(--ctl-lift); }
+/* filled controls: matched to each base rule's own specificity (they set the `background` shorthand), and later */
+button.primary, button.danger-btn, button.danger-solid, .rate.rate-easy, .sk-btn.sk-done, .rail-new,
+button[aria-pressed='true']:where(:not([class]), [class=''], .head-btn, .tb, .sk-btn, .subject-chip, .crop-chip),
+a.button.primary, .tbar-btn.done {
+  background-image: var(--fill-sheen);
+  box-shadow: var(--fill-edge), 0 1px 1px light-dark(rgba(20, 16, 8, 0.1), rgba(0, 0, 0, 0.4)), 0 6px 14px -6px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+button.danger-btn, button.danger-solid { box-shadow: var(--fill-edge), 0 1px 1px light-dark(rgba(20, 16, 8, 0.1), rgba(0, 0, 0, 0.4)), 0 6px 14px -6px color-mix(in srgb, var(--error) 55%, transparent); }
+.subject-chip[aria-pressed='true'] { box-shadow: var(--fill-edge), 0 4px 10px -5px color-mix(in srgb, var(--fg) 45%, transparent); }
+button:where(:not([class]), [class=''], .head-btn, .head-review, .head-more, .tb, .sk-btn, .rv-icon, .rv-undo, .rv-wide, .rate, .danger-outline, .subject-chip, .crop-chip, .size-btn, .primary, .danger-btn, .danger-solid, .sk-done):active:not(:disabled),
+a.button:active { background-image: none; box-shadow: var(--ctl-press); }
+button:where(:not([class]), [class=''], .head-btn, .head-review, .head-more, .tb, .sk-btn, .size-btn, .primary):disabled { background-image: none; box-shadow: none; }
+/* ghost buttons that keep the base class-less look in a menu or a joined group */
+.popover button, .fig-seg button, .my-style > button, .icon-btn { box-shadow: none; }
+
+/* chips, pills and tags: a hairline and a lit edge, no lift */
+.chip, .chip-link, .chip-wrap, .chip-btn, .subject-tag, .kind, .chart-chip, .key-pill, .ol-count, .sec-count {
+  box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px var(--hair);
+}
+.chip-btn, .chip-link { background-image: var(--ctl); }
+.template-wrap { box-shadow: none; }
+.chart-legend .chart-chip[aria-pressed='false'] { box-shadow: inset 0 0 0 1px var(--hair); }
+
+/* segmented controls: a recessed track, the chosen part raised out of it */
+.fig-seg { box-shadow: inset 0 1px 2px light-dark(rgba(20, 16, 8, 0.08), rgba(0, 0, 0, 0.4)); }
+.fig-seg button[aria-checked='true'] { background-image: var(--fill-sheen); box-shadow: var(--fill-edge); }
+.my-style { box-shadow: var(--ctl-lift); background-color: var(--surface); background-image: var(--ctl); }
+
+/* text fields in forms sit in a shallow well */
+:is(.field, .sheet-field, .fig-field, .lp-field, .capture) :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color']), select, textarea),
+.lp-input, .ctx-input, .ctx-select {
+  box-shadow: inset 0 1px 2px light-dark(rgba(20, 16, 8, 0.06), rgba(0, 0, 0, 0.32));
+}
+
+/* ---------- icon rail and bottom bar ---------- */
+.rail {
+  background-color: var(--rail);
+  background-image: linear-gradient(180deg, light-dark(rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.025)), transparent 45%);
+  box-shadow: 1px 0 0 var(--sheen), 8px 0 22px -16px light-dark(rgba(20, 16, 8, 0.3), rgba(0, 0, 0, 0.75));
+}
+.nav-item[aria-current='true'] {
+  background-color: var(--surface);
+  background-image: var(--face);
+  box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px var(--hair), var(--lift-1);
+}
+.nav-item[aria-current='true'] svg { color: var(--accent); }
+.rail-new { box-shadow: var(--fill-edge), 0 1px 1px light-dark(rgba(20, 16, 8, 0.1), rgba(0, 0, 0, 0.4)), 0 10px 20px -8px color-mix(in srgb, var(--accent) 65%, transparent); }
+@media (max-width: 899px) {
+  .rail { box-shadow: inset 0 1px 0 var(--sheen), 0 -10px 26px -16px light-dark(rgba(20, 16, 8, 0.32), rgba(0, 0, 0, 0.8)); }
+}
+
+/* ---------- note header and the context bar under it ---------- */
+.canvas-head { box-shadow: 0 1px 0 var(--sheen), 0 12px 18px -18px light-dark(rgba(20, 16, 8, 0.45), rgba(0, 0, 0, 0.9)); }
+.ctx-group {
+  padding: 3px;
+  border-radius: calc(13px * var(--round, 1));
+  background-color: color-mix(in srgb, var(--chip) 55%, transparent);
+  box-shadow: inset 0 0 0 1px var(--hair), inset 0 1px 2px light-dark(rgba(20, 16, 8, 0.05), rgba(0, 0, 0, 0.3));
+}
+.ctx-label { padding-left: 8px; }
+.ctx-group .tb { border-color: color-mix(in srgb, var(--line) 70%, transparent); }
+
+/* ---------- floating selection toolbar (inverted: its edges come from its own ink, not the page's sheen) ---------- */
+.bubble {
+  background-color: var(--float);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 60%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--float-fg) 16%, transparent), 0 0 0 1px rgba(0, 0, 0, 0.18), var(--lift-3);
+}
+.bubble .fb[aria-pressed='true'] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--float-fg) 22%, transparent); }
+.bubble .fb.mark:not([aria-pressed='true']) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -2px 0 rgba(0, 0, 0, 0.1); }
+.bubble .link-row { box-shadow: inset 0 0 0 1px var(--hair); }
+
+/* ---------- touch bar (portrait, above the keyboard) ---------- */
+.touchbar {
+  background-color: var(--rail);
+  background-image: linear-gradient(180deg, light-dark(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.03)), transparent 70%);
+  box-shadow: inset 0 1px 0 var(--sheen), 0 -10px 26px -16px light-dark(rgba(20, 16, 8, 0.32), rgba(0, 0, 0, 0.8));
+}
+.tbar-btn[aria-pressed='true'] { background-image: var(--face); box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px var(--hair), var(--lift-1); }
+.mark-chip { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -2px 0 rgba(0, 0, 0, 0.1); }
+
+/* ---------- floating layers: insert menu, menus, size popover, Style panel, sheets, search ---------- */
+.insert-menu, .popover, .size-pop, .look-panel, .search-panel {
+  border-color: color-mix(in srgb, var(--line) 70%, transparent);
+  box-shadow: inset 0 1px 0 var(--sheen), 0 0 0 1px var(--hair), var(--lift-3);
+}
+.sheet { box-shadow: inset 0 1px 0 var(--sheen), 0 0 0 1px var(--hair), var(--lift-3); }
+.sheet h2, .lp-title { letter-spacing: -0.01em; }
+.insert-menu .insert-opt[aria-selected='true'], .insert-menu .insert-opt:hover {
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent);
+  box-shadow: inset 0 0 0 1px var(--hair);
+}
+.ins-glyph {
+  color: var(--accent);
+  background-image: var(--ctl);
+  box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px var(--hair);
+}
+.insert-opt[aria-selected='true'] .ins-glyph { box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px var(--hair), var(--lift-1); }
+.popover button:hover:not(:disabled), .popover button:focus-visible { box-shadow: inset 0 0 0 1px var(--hair); }
+/* the Style panel's head: a faint band, rounded with the panel */
+.lp-head {
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+  border-bottom-color: color-mix(in srgb, var(--line) 70%, transparent);
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--chip) 50%, transparent), transparent);
+}
+.lp-tile, .th-tile, .hset-tile, .font-card, .theme-opt, .tpl-card, .ct-opt, .gallery-tile, .drive-option, .drive-pick, .fig-pal {
+  background-image: var(--face);
+  box-shadow: inset 0 1px 0 var(--sheen), var(--lift-1);
+}
+.lp-tile[aria-pressed='true'], .fig-pal[aria-checked='true'], .drive-pick[aria-pressed='true'] { box-shadow: inset 0 1px 0 var(--sheen), 0 0 0 2px var(--accent), 0 6px 14px -6px color-mix(in srgb, var(--accent) 45%, transparent); }
+.th-tile[aria-checked='true'], .hset-tile[aria-checked='true'], .font-card[aria-checked='true'], .theme-opt[aria-checked='true'] { box-shadow: inset 0 1px 0 var(--sheen), 0 6px 14px -6px color-mix(in srgb, var(--accent) 45%, transparent); }
+@media (hover: hover) { .gallery-tile:hover { box-shadow: 0 0 0 2px var(--accent), var(--lift-2); } }
+.th-swatch, .tpl-thumb { box-shadow: inset 0 1px 2px light-dark(rgba(20, 16, 8, 0.06), rgba(0, 0, 0, 0.35)); }
+.sheet-scrim, .search-overlay { -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+@media (prefers-reduced-transparency: reduce) { .sheet-scrim, .search-overlay { -webkit-backdrop-filter: none; backdrop-filter: none; } }
+.search-row {
+  border-bottom-color: color-mix(in srgb, var(--line) 70%, transparent);
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--chip) 45%, transparent), transparent);
+}
+.search-hit:hover, .search-hit:focus-visible { box-shadow: inset 0 0 0 1px var(--hair); }
+
+/* ---------- cards: notes, folders, Today, More, Settings, trash, review ---------- */
+.note-card, .more-row, .trash-row, .card-block, .today .panel {
+  border-color: color-mix(in srgb, var(--line) 80%, transparent);
+  background-image: var(--face);
+  box-shadow: inset 0 1px 0 var(--sheen), var(--lift-1);
+}
+.note-card[aria-current='true'] { box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px var(--accent), var(--lift-1); }
+@media (hover: hover) { a.note-card:hover, a.more-row:hover, .tpl-card:hover { box-shadow: inset 0 1px 0 var(--sheen), var(--lift-2); } }
+.more-icon { color: var(--accent); background-image: var(--ctl); box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px var(--hair); }
+.custom-theme { box-shadow: inset 0 1px 2px light-dark(rgba(20, 16, 8, 0.05), rgba(0, 0, 0, 0.3)), inset 0 0 0 1px var(--hair); }
+
+/* folder cards: tinted by the folder's own colour, which also colours the shadow */
+:where(.fcard):not(.fadd) {
+  border-color: color-mix(in srgb, var(--c, var(--accent)) 16%, var(--line));
+  background-image: linear-gradient(160deg, color-mix(in srgb, var(--c, var(--accent)) 7%, transparent) 0%, transparent 55%), var(--face);
+  box-shadow: inset 0 1px 0 var(--sheen), var(--lift-1), 0 10px 24px -16px color-mix(in srgb, var(--c, var(--accent)) 45%, transparent);
+}
+@media (hover: hover) { a.fcard:hover { box-shadow: inset 0 1px 0 var(--sheen), var(--lift-2), 0 14px 28px -16px color-mix(in srgb, var(--c, var(--accent)) 50%, transparent); } }
+.fbadge {
+  background-image: linear-gradient(160deg, color-mix(in srgb, var(--c) 10%, transparent), transparent);
+  box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px color-mix(in srgb, var(--c) 24%, transparent), 0 2px 6px -2px color-mix(in srgb, var(--c) 35%, transparent);
+}
+.fbar { box-shadow: inset 0 1px 1px light-dark(rgba(20, 16, 8, 0.08), rgba(0, 0, 0, 0.35)); }
+.fbar i { background-image: linear-gradient(90deg, color-mix(in srgb, var(--c) 72%, var(--surface)), var(--c)); }
+.fdel { box-shadow: 0 4px 10px -3px color-mix(in srgb, var(--error) 55%, transparent); }
+
+/* Today: the due card is the one lit object on the page; the rest are quiet sheets */
+.due-card {
+  background-color: var(--accent);
+  background-image: radial-gradient(120% 140% at 100% 0%, rgba(255, 255, 255, 0.13), transparent 55%), var(--fill-sheen);
+  box-shadow: var(--fill-edge), 0 1px 2px light-dark(rgba(20, 16, 8, 0.1), rgba(0, 0, 0, 0.45)), 0 20px 40px -18px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+.due-chip { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-fg) 22%, transparent); }
+.start-review { box-shadow: inset 0 1px 0 var(--sheen), 0 1px 1px rgba(0, 0, 0, 0.12), 0 8px 18px -8px rgba(0, 0, 0, 0.45); }
+.start-review:active { box-shadow: var(--ctl-press); }
+.streak { background-image: var(--ctl); box-shadow: inset 0 1px 0 var(--sheen), var(--lift-1); }
+.streak.lit { background-color: color-mix(in srgb, var(--sub-ca) 9%, var(--surface)); border-color: color-mix(in srgb, var(--sub-ca) 30%, var(--line)); }
+.ring svg { filter: drop-shadow(0 1px 1.5px light-dark(rgba(20, 16, 8, 0.16), rgba(0, 0, 0, 0.5))); }
+.today .panel-head .eyebrow, .eyebrow { letter-spacing: 0.1em; }
+
+/* review: the card lifts off the desk; the rating buttons are solid keys */
+.rv-card { box-shadow: inset 0 1px 0 var(--sheen), var(--lift-2), 0 30px 60px -30px light-dark(rgba(20, 16, 8, 0.22), rgba(0, 0, 0, 0.6)); }
+.rv-stats div, .rv-own { box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px var(--hair); }
+.rv-progress { box-shadow: inset 0 1px 1px light-dark(rgba(20, 16, 8, 0.08), rgba(0, 0, 0, 0.35)); }
+.rv-bar, .meter[data-zone='ok'] .meter-fill { background-image: var(--fill-sheen); }
+
+/* outline rail: the section you are in is a raised tab */
+.outline-row.active:not(.dragging) { background-image: var(--face); box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px var(--hair), var(--lift-1); }
+
+/* ---------- toasts and banners ---------- */
+.toast {
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--bg) 9%, transparent), transparent 70%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bg) 18%, transparent), 0 0 0 1px rgba(0, 0, 0, 0.15), var(--lift-3);
+}
+.banner { background-image: var(--face); box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px var(--hair), var(--lift-1); }
+.banner.warn { box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px color-mix(in srgb, var(--warn-fg) 20%, transparent), 0 6px 16px -10px color-mix(in srgb, var(--warn-fg) 40%, transparent); }
+
+/* ---------- figure frames: pictures, charts, diagrams, mind maps, sketches ---------- */
+.chart-block, .diagram-block, .mindmap-block {
+  border-color: color-mix(in srgb, var(--line) 80%, transparent);
+  background-image: var(--face);
+  box-shadow: inset 0 1px 0 var(--sheen), var(--lift-2);
+}
+.chart-title { letter-spacing: -0.005em; }
+.chart-panel { border-top-color: color-mix(in srgb, var(--line) 70%, transparent); }
+.dg-items li { box-shadow: inset 0 0 0 1px var(--hair); }
+/* a plain (rectangular) picture gets a hairline and a soft shadow; a shaped one keeps its own outline */
+.img-block:not([data-shape]) .img-clip, .img-block[data-shape='rect'] .img-clip { box-shadow: 0 0 0 1px var(--hair), var(--lift-1); }
+.resize-handle { box-shadow: 0 2px 6px light-dark(rgba(20, 16, 8, 0.3), rgba(0, 0, 0, 0.6)); }
+.sketch-paper { border-color: color-mix(in srgb, var(--line) 80%, transparent); box-shadow: inset 0 1px 0 var(--sheen), var(--lift-1); }
+.sketch-strip { background-image: var(--face); box-shadow: inset 0 1px 0 var(--sheen), 0 0 0 1px var(--hair), var(--lift-2); }
+.sketch-grow, .mm-count, .mm-zoom button { box-shadow: inset 0 1px 0 var(--sheen), var(--lift-1); }
+
+@media (forced-colors: active) {
+  button, a.button, .chip, .chip-link, .chip-wrap, .rail, .nav-item, .touchbar, .bubble, .insert-menu, .popover, .size-pop, .look-panel, .sheet, .search-panel,
+  .note-card, .fcard, .more-row, .card-block, .today .panel, .due-card, .toast, .banner, .chart-block, .diagram-block, .mindmap-block, .img-clip, .sketch-paper, .sketch-strip, .rv-card {
+    box-shadow: none; background-image: none;
+  }
+}

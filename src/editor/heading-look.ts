@@ -58,20 +58,28 @@ export const HeadingSetExt = Extension.create<Record<string, never>, { set: Head
   },
   addProseMirrorPlugins() {
     const storage = this.storage;
+    // 0.17 speed pass: worked out again only when the doc or the set changes (not on every caret move),
+    // and the walk skips the text inside paragraphs (a heading never sits in one).
+    let last: { doc: unknown; set: HeadingSet; decos: DecorationSet | null } | null = null;
     return [
       new Plugin({
         key: setKey,
         props: {
           decorations(state) {
+            if (last && last.doc === state.doc && last.set === storage.set) return last.decos;
             const looks = SET_LOOKS[storage.set];
-            if (!looks) return null;
-            const decos: Decoration[] = [];
-            state.doc.descendants((node, pos) => {
-              if (node.type.name !== 'heading') return true;
-              if (!readHeadingLook(node.attrs.look)) decos.push(Decoration.node(pos, pos + node.nodeSize, lookAttrs(node.attrs.level === 2 ? looks.h2 : looks.h3)));
-              return false;
-            });
-            return DecorationSet.create(state.doc, decos);
+            let decos: DecorationSet | null = null;
+            if (looks) {
+              const list: Decoration[] = [];
+              state.doc.descendants((node, pos) => {
+                if (node.type.name !== 'heading') return !node.isTextblock;
+                if (!readHeadingLook(node.attrs.look)) list.push(Decoration.node(pos, pos + node.nodeSize, lookAttrs(node.attrs.level === 2 ? looks.h2 : looks.h3)));
+                return false;
+              });
+              decos = DecorationSet.create(state.doc, list);
+            }
+            last = { doc: state.doc, set: storage.set, decos };
+            return decos;
           }
         }
       })

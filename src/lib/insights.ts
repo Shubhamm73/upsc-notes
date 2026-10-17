@@ -31,6 +31,18 @@ export function sectionKeyLines(doc: DocNode): string[] {
 
 /** Each key line with the rest of its paragraph (`before` / `after`), used for the blanked-out review prompt. */
 export function keyLineDetails(doc: DocNode): { text: string; before: string; after: string }[] {
+  // 0.17 speed pass: remembered per doc object (a saved doc is never changed in place; each edit makes a new one),
+  // so the live key-line counts walk only the section being edited. Callers get their own copies.
+  const known = doc && typeof doc === 'object' ? linesOf.get(doc) : undefined;
+  if (known) return known.map((d) => ({ ...d }));
+  const out = findKeyLines(doc);
+  if (doc && typeof doc === 'object') linesOf.set(doc, out.map((d) => ({ ...d })));
+  return out;
+}
+
+const linesOf = new WeakMap<DocNode, { text: string; before: string; after: string }[]>();
+
+function findKeyLines(doc: DocNode): { text: string; before: string; after: string }[] {
   const out: { text: string; before: string; after: string }[] = [];
   const seen = new Set<string>();
   const walk = (n: DocNode) => {

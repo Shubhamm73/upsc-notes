@@ -127,7 +127,8 @@ function figureCols(table: PMNode): Set<number> {
 function figureDecorations(doc: PMNode): DecorationSet {
   const decos: Decoration[] = [];
   doc.descendants((node, pos) => {
-    if (node.type.name !== 'table') return true;
+    // 0.17: no table lives inside a paragraph or heading, so their text is not walked on every keystroke
+    if (node.type.name !== 'table') return !node.isTextblock;
     const cols = figureCols(node);
     if (cols.size) {
       const map = TableMap.get(node);
