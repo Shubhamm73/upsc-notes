@@ -763,9 +763,15 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
   }
 
   const onTx = () => sync();
+  let scrollFrame = 0;
   const onScroll = () => {
-    if (!bubble.hidden) placeBubble();
-    if (!menu.hidden && menuEditor && menuMode === 'slash') placeMenu(caretRect(menuEditor), false);
+    if (bubble.hidden && menu.hidden) return; // nothing floating: no work on the scroll path
+    if (scrollFrame) return;
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = 0;
+      if (!bubble.hidden) placeBubble();
+      if (!menu.hidden && menuEditor && menuMode === 'slash') placeMenu(caretRect(menuEditor), false);
+    });
   };
   const onViewport = () => {
     placeTouchbar();
@@ -775,7 +781,7 @@ export function createCanvasTools(opts: { noteId: () => string; toast: (t: strin
     const t = ev.target as Node;
     if (!menu.hidden && !menu.contains(t) && !touchbar.contains(t)) closeMenu();
   };
-  window.addEventListener('scroll', onScroll, true);
+  window.addEventListener('scroll', onScroll, { capture: true, passive: true });
   window.visualViewport?.addEventListener('resize', onViewport);
   window.visualViewport?.addEventListener('scroll', onViewport);
   document.addEventListener('pointerdown', onDocPointer);
