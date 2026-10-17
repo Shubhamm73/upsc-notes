@@ -2,7 +2,7 @@
 
 Offline-first study-notes PWA for one UPSC aspirant (owner's brother) on a **Samsung Galaxy Tab S8**.
 Owner: Shubham (GitHub `Shubhamm73`). Live: https://shubhamm73.github.io/upsc-notes/ (GitHub Pages via Actions on push to `main`).
-Current version: **0.17.0 (U4-3 speed pass: live counts and heading-set looks no longer re-walk the whole note on every keystroke)**. Next: **UI-4 U4-4 Accessibility pass + PDF audit (0.18)** (see the UI-4 plan in the roadmap).
+Current version: **0.18.0 (U4-4 accessibility pass + PDF audit, Edit | Read mode, taped sticky note, depth pass)**. UI-4 is closed; nothing queued. Not pushed yet.
 
 **Read this before doing anything: the work order is the "Six-asks plan" table below (R1–R6), then the rest of UI-4.** On 13 Oct 2026 the six-asks plan (UPSC Notes Redesign Plan artifact) recommended moving UI-4 after the six asks, but this file was written with the UI-4 plan instead, so 0.9.0 built Sketch and the next session started UI-4 step 2 again. The owner confirmed (13 Oct 2026, "go ahead with the recommended plan steps"): six asks first, every recommended decision, UI-4 U4-2…U4-4 after them. Sketch (0.9.0) stays.
 
@@ -64,6 +64,7 @@ for t in smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smok
 scripts/run-suites.sh               # the same, starts/stops the preview itself, prints totals; LIVE=1 for the live site; on macOS adds scripts/linux-shim
 ```
 Python deps: playwright, pypdf, Pillow; `pdftotext` for the PDF test. In the cloud container pin `pip install playwright==1.56.0` (matches the pre-installed Chromium build 1194; newer pip versions look for a browser that isn't there).
+0.18.0 baseline: 27 suites, 1536 checks (smoke-test-a11y 59: axe-core on every screen day+night, keyboard, 44 px targets, Read mode; smoke-test-pdfaudit 86: every block in the PDF). No schema change, so the upgrade test was not re-run. Read mode = screen state only (`readMode` in views/notes.ts, Ctrl+E); depth = final `0.18: depth` block of styles.css.
 0.17.0 baseline: 25 suites, 1391 checks (smoke-test-speed adds 18).
 0.16.0 baseline: 24 suites, 1373 checks, all passing (smoke-test-figures adds 29; themes now checks a banner title against its own ribbon); upgrade test from 0.15.0 (21c29c7): 53 checks, all passing. Known: a floated table prints full width in the PDF.
 0.15.0 baseline: 23 suites, 1344 checks, all passing (smoke-test-penmark adds 52); upgrade test from 0.14.0 (ec21eec): 60 checks, all passing, 4 runs in a row. It now proves the update writes neither new setting, a pen-made highlight is an ordinary highlight, the backup stays format 8 with both settings (a fresh tablet takes them), and 0.14 takes that file, stores the note byte-for-byte, ignores the two settings and edits the note keeping the mark.

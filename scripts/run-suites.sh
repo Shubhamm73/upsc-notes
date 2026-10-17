@@ -9,7 +9,7 @@
 cd "$(dirname "$0")/.."
 [ "$(uname)" = Darwin ] && export PYTHONPATH="$PWD/scripts/linux-shim${PYTHONPATH:+:$PYTHONPATH}" UPSC_LINUX_SHIM=1
 OUT=${LOGS:-/tmp/upsc-suites}; mkdir -p "$OUT"
-SUITES=${@:-smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2 smoke-test-ui3 smoke-test-paste smoke-test-canvas2 smoke-test-sketch smoke-test-share smoke-test-folders smoke-test-drive smoke-test-inline smoke-test-tables smoke-test-looks smoke-test-charts smoke-test-diagrams smoke-test-mindmap smoke-test-themes smoke-test-templates smoke-test-penmark smoke-test-figures smoke-test-speed}
+SUITES=${@:-smoke-test smoke-test-m2 smoke-test-m3 smoke-test-m4 smoke-test-m5 smoke-test-ui1 smoke-test-ui2 smoke-test-ui3 smoke-test-paste smoke-test-canvas2 smoke-test-sketch smoke-test-share smoke-test-folders smoke-test-drive smoke-test-inline smoke-test-tables smoke-test-looks smoke-test-charts smoke-test-diagrams smoke-test-mindmap smoke-test-themes smoke-test-templates smoke-test-penmark smoke-test-figures smoke-test-speed smoke-test-a11y smoke-test-pdfaudit}
 if [ -z "$LIVE" ]; then
   # never `pkill -f "vite preview"`: the pattern matches this shell
   lsof -ti tcp:4173 -sTCP:LISTEN | xargs kill 2>/dev/null; sleep 0.5

@@ -82,6 +82,7 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg);
@@ -1967,4 +1968,284 @@ button:where(:not([class]), [class=''], .head-btn, .head-review, .head-more, .tb
   .note-card, .fcard, .more-row, .card-block, .today .panel, .due-card, .toast, .banner, .chart-block, .diagram-block, .mindmap-block, .img-clip, .sketch-paper, .sketch-strip, .rv-card {
     box-shadow: none; background-image: none;
   }
+}
+
+/* ======================= 0.18: sticky note (a taped paper slip), Read mode ======================= */
+/* Sticky container: warm paper with a lit top edge, a strip of tape in the note's colour, a folded corner and a
+   two-part shadow (a tight contact shadow plus a soft lifted one). drop-shadow (not box-shadow) so the shadow
+   follows the cut-away corner. The tape and the fold are separate pieces with soft edges, so the slight turn
+   never draws a jagged line. */
+.rich .panel[data-panel='sticky'] {
+  --paper: var(--sticky);
+  --fold: 26px;
+  margin: 1.3em 6px 1em;
+  padding: 22px 20px 20px;
+  border: 0;
+  border-radius: 3px 3px 3px 3px;
+  color: var(--sticky-fg);
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(176deg, light-dark(rgba(255, 255, 255, 0.55), rgba(255, 236, 160, 0.1)) 0%, transparent 38%),
+    linear-gradient(0deg, light-dark(rgba(140, 100, 20, 0.14), rgba(0, 0, 0, 0.1)) 0%, transparent 34%);
+  box-shadow: inset 0 1px 0 light-dark(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.1)), inset 0 -1px 0 light-dark(rgba(120, 85, 10, 0.18), rgba(0, 0, 0, 0.3));
+  transform: rotate(-0.5deg);
+  filter: drop-shadow(0 1px 1px light-dark(rgba(60, 40, 5, 0.22), rgba(0, 0, 0, 0.5))) drop-shadow(0 12px 14px light-dark(rgba(60, 40, 5, 0.2), rgba(0, 0, 0, 0.5)));
+}
+.rich .panel[data-panel='sticky'][data-fill='medium'], .rich .panel[data-panel='sticky'][data-fill='solid'] { --paper: color-mix(in srgb, var(--c) 16%, var(--sticky)); }
+/* the tape */
+.rich .panel[data-panel='sticky']::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  width: 86px;
+  height: 24px;
+  margin-left: -43px;
+  transform: rotate(-2.5deg);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.08) 60%, rgba(0, 0, 0, 0.06));
+  background-color: color-mix(in srgb, var(--c) 48%, transparent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  clip-path: polygon(1% 0, 99% 0, 100% 10%, 97% 22%, 100% 34%, 97% 46%, 100% 58%, 97% 70%, 100% 82%, 99% 100%, 1% 100%, 0 90%, 3% 78%, 0 66%, 3% 54%, 0 42%, 3% 30%, 0 18%);
+  pointer-events: none;
+  user-select: none;
+}
+/* the folded corner */
+.rich .panel[data-panel='sticky']::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: var(--fold);
+  height: var(--fold);
+  background-image: linear-gradient(315deg, transparent 50%, light-dark(rgba(110, 78, 10, 0.3), rgba(0, 0, 0, 0.5)) 50%, light-dark(rgba(255, 244, 190, 0.9), rgba(120, 104, 52, 0.9)) 100%);
+  border-top-left-radius: 3px;
+  box-shadow: -2px -2px 4px -1px light-dark(rgba(60, 40, 5, 0.22), rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+}
+.rich .panel[data-panel='sticky'] .panel-head {
+  margin: 0 0 8px;
+  padding: 0 0 6px;
+  min-height: 0;
+  font-family: var(--font-head);
+  font-size: 1.05rem;
+  letter-spacing: 0;
+  background: none;
+  border-bottom: 1px dashed color-mix(in srgb, var(--sticky-fg) 28%, transparent);
+  border-radius: 0;
+  color: inherit;
+}
+.rich .panel[data-panel='sticky'] .panel-foot { color: color-mix(in srgb, var(--sticky-fg) 70%, transparent); }
+/* the Sticky heading look: the same slip, smaller */
+[data-look='sticky'] > .h-text {
+  background-color: color-mix(in srgb, var(--c) calc(var(--t) * 0.7), var(--sticky));
+  background-image: linear-gradient(176deg, light-dark(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.07)), transparent 55%);
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 light-dark(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.1));
+  transform: rotate(-0.8deg);
+  filter: drop-shadow(0 1px 1px light-dark(rgba(60, 40, 5, 0.22), rgba(0, 0, 0, 0.5))) drop-shadow(0 8px 8px light-dark(rgba(60, 40, 5, 0.18), rgba(0, 0, 0, 0.45)));
+}
+/* the picker thumbnail */
+.pk-mini[data-panel='sticky'] {
+  border-top: 0;
+  background-color: var(--sticky);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 60%), linear-gradient(315deg, transparent 6px, transparent 0);
+  box-shadow: inset 0 3px 0 -1px color-mix(in srgb, var(--c) 70%, transparent), 0 3px 6px -1px rgba(60, 40, 5, 0.3);
+}
+@media (forced-colors: active) {
+  .rich .panel[data-panel='sticky'], [data-look='sticky'] > .h-text { filter: none; border: 1px solid CanvasText; }
+  .rich .panel[data-panel='sticky']::before, .rich .panel[data-panel='sticky']::after { display: none; }
+}
+
+/* ---------- Edit | Read switch in the note header ---------- */
+.mode-switch { display: inline-flex; padding: 3px; gap: 2px; border-radius: calc(13px * var(--round, 1)); background-color: color-mix(in srgb, var(--chip) 70%, transparent); box-shadow: inset 0 1px 2px light-dark(rgba(20, 16, 8, 0.1), rgba(0, 0, 0, 0.4)), inset 0 0 0 1px var(--hair); }
+.seg-btn { gap: 6px; min-height: 44px; padding: 0 12px; border-color: transparent; background: transparent; color: var(--muted); font-size: 0.95rem; border-radius: calc(10px * var(--round, 1)); }
+.seg-btn[aria-pressed='true'] { background-color: var(--surface); background-image: var(--face); color: var(--fg); border-color: transparent; box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px var(--hair), var(--lift-1); }
+.seg-btn[aria-pressed='true'] svg { color: var(--accent); }
+@media (max-width: 699px) { .seg-btn { padding: 0 10px; } }
+/* 700-1199 px (portrait tablet, split screen, the rail beside a narrow note): the switch and Focus go icon-only so
+   Mark reviewed, the outline button and ⋯ keep 44 px; the words stay as their accessible names */
+@media (min-width: 700px) and (max-width: 1199px) {
+  .head-row :is(.seg-btn, .head-btn) .head-btn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .seg-btn { padding: 0 11px; }
+  .head-row > :not(.back-link, .head-meta, .spacer) { flex-shrink: 0; }
+  .head-row > .back-link { flex-shrink: 1; min-width: 0; }
+  .head-row > .back-link span { min-width: 0; }
+}
+@media (min-width: 700px) and (max-width: 999px) { .head-row .key-pill { display: none; } }
+.seg-btn { min-width: 44px; }
+.head-more { flex: none; }
+
+/* ---------- Read mode: the note shows, nothing takes a change ---------- */
+.canvas.is-reading :is(.add-section, .ol-add, .undo-group, .ctxbar) { display: none !important; }
+body:has(.canvas.is-reading) :is(.touchbar, .bubble, .insert-menu) { display: none !important; }
+.canvas.is-reading .canvas-head { box-shadow: 0 1px 0 var(--sheen), 0 2px 0 color-mix(in srgb, var(--accent) 35%, transparent), 0 12px 18px -18px light-dark(rgba(20, 16, 8, 0.45), rgba(0, 0, 0, 0.9)); }
+.canvas.is-reading .rich { cursor: default; caret-color: transparent; }
+.canvas.is-reading .rich :is(.is-empty, .is-editor-empty)::before { display: none; }
+.canvas.is-reading :is(.canvas-title, .section-heading, .chip-input, textarea, .chip-select):read-only,
+.canvas.is-reading :is(.chip-select):disabled { cursor: default; opacity: 1; }
+.canvas.is-reading :is(.chip-select, .chip-place):disabled { color: inherit; }
+.canvas.is-reading .section-heading:focus-visible, .canvas.is-reading .canvas-title:focus-visible { outline: none; }
+.canvas.is-reading :is(.resize-handle, .fig-grip, .size-tag, .panel-foot[contenteditable]) { display: none; }
+
+/* ---------- 0.18 accessibility: every control is a 44 px target ---------- */
+.chip-wrap, .chip-select, .chip-input, .style-select, .ol-add { min-height: 44px; }
+.ol-menu { width: 44px; }
+.due-chip { min-height: 44px; display: inline-flex; align-items: center; }
+
+/* ======================= 0.18: depth ======================= */
+/* Three heights, used everywhere: rest (cards, panels, tiles), raised (the writing page, figures, the review card,
+   hover) and overlay (menus, sheets, toasts). Each is a tight contact shadow, a short key shadow and a long soft
+   ambient one, tinted by the theme's ink in day themes and plain black in night ones. The app sits on a lit desk
+   (a fixed layer: brighter under the top edge, a faint vignette at the far corners), the note is a raised sheet of
+   paper on it, and the sticky bars are frosted glass. Paint only: no element changes size or place, no shadow or
+   background ever animates, background-color stays the theme's everywhere but the glass bars. */
+/* The build (Lightning CSS) turns every light-dark() into a pair of switch variables that flip only where a stylesheet
+   rule declares color-scheme. Themes other than Night set color-scheme inline (applyAppearance), so Forest night, True
+   black and a dark Custom got the light half of every light-dark() in the app (white sheens, pale sticky paper). These
+   rules declare it in the stylesheet too, so the switches follow the theme. */
+:root[style*='color-scheme: dark'] { color-scheme: dark; }
+:root[style*='color-scheme: light'] { color-scheme: light; }
+:root {
+  --depth-v: 1;
+  --lift-1:
+    0 1px 1px light-dark(color-mix(in srgb, var(--fg) 7%, transparent), rgba(0, 0, 0, 0.5)),
+    0 2px 5px -1px light-dark(color-mix(in srgb, var(--fg) 6%, transparent), rgba(0, 0, 0, 0.32)),
+    0 10px 22px -12px light-dark(color-mix(in srgb, var(--fg) 20%, transparent), rgba(0, 0, 0, 0.7));
+  --lift-2:
+    0 1px 2px light-dark(color-mix(in srgb, var(--fg) 8%, transparent), rgba(0, 0, 0, 0.5)),
+    0 6px 14px -6px light-dark(color-mix(in srgb, var(--fg) 11%, transparent), rgba(0, 0, 0, 0.45)),
+    0 24px 48px -20px light-dark(color-mix(in srgb, var(--fg) 26%, transparent), rgba(0, 0, 0, 0.8));
+  --lift-3:
+    0 1px 2px light-dark(color-mix(in srgb, var(--fg) 9%, transparent), rgba(0, 0, 0, 0.55)),
+    0 14px 30px -10px light-dark(color-mix(in srgb, var(--fg) 17%, transparent), rgba(0, 0, 0, 0.6)),
+    0 40px 80px -24px light-dark(color-mix(in srgb, var(--fg) 34%, transparent), rgba(0, 0, 0, 0.88));
+  --sheen: light-dark(rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.085));
+  --sheet: light-dark(color-mix(in srgb, var(--surface) 62%, var(--bg)), color-mix(in srgb, var(--surface) 82%, var(--bg)));
+  /* 95 %: even a solid ink-coloured band (cover, banner heading, chart) scrolled under the bar leaves its grey text >= 4.5:1 */
+  --glass: color-mix(in srgb, var(--bg) 95%, transparent);
+  --glass-blur: blur(16px);
+}
+
+/* ---------- the desk ---------- */
+/* One fixed layer behind everything (z-index -1 in the root stacking context, above the page colour, below all
+   content): composited once, never repainted on scroll. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(95% 62% at 56% -10%, light-dark(color-mix(in srgb, var(--surface) 80%, transparent), color-mix(in srgb, var(--accent) 9%, transparent)), transparent 72%),
+    radial-gradient(135% 115% at 50% 28%, transparent 56%, light-dark(color-mix(in srgb, var(--fg) 7%, transparent), rgba(0, 0, 0, 0.34)) 100%);
+}
+
+/* ---------- frosted sticky bars: the page scrolls under them ---------- */
+.topline, .canvas-head, .rv-head, .rv-foot {
+  background-color: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+.topline { box-shadow: 0 1px 0 color-mix(in srgb, var(--line) 45%, transparent); }
+.topline:not(:has(.save-status:not(:empty))):not(:has(.install:not([hidden]))) { box-shadow: none; }
+.canvas-head { border-bottom-color: color-mix(in srgb, var(--line) 75%, transparent); }
+.rv-foot { box-shadow: 0 -1px 0 color-mix(in srgb, var(--line) 50%, transparent); }
+
+/* ---------- the writing page: a raised sheet (a layer behind the column; the column keeps its size) ---------- */
+@media (min-width: 1000px) {
+  .canvas-col { position: relative; }
+  .canvas-col::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    top: 10px;
+    bottom: calc(40vh - 72px);
+    left: -12px;
+    right: -24px;
+    border-radius: calc(20px * var(--round, 1));
+    background-color: var(--sheet);
+    background-image: linear-gradient(180deg, light-dark(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.03)), transparent 220px);
+    box-shadow: inset 0 1px 0 var(--sheen), 0 0 0 1px light-dark(var(--hair), rgba(255, 255, 255, 0.07)), var(--lift-2);
+    pointer-events: none;
+  }
+  /* a comfortable column is centred with the fold chevron hanging 48 px out: the sheet takes it in */
+  html[data-width='comfortable'] .canvas-col::before { left: -60px; right: -40px; }
+  body.focus-mode .canvas-col::before { top: 28px; }
+}
+@media (min-width: 1000px) and (max-width: 1199px) {
+  html[data-width='comfortable'] .canvas-col::before { left: -20px; right: -20px; }
+}
+
+/* ---------- touch: a card gives under the finger, lifts under a mouse (transform only, 160 ms) ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  a.note-card, a.more-row, .trash-row, .theme-opt, .th-tile, .font-card, .hset-tile, .gallery-tile, .drive-option, a.ring,
+  .start-review, button.primary, a.button.primary, .rail-new, .nav-item {
+    transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  :is(a.note-card, a.more-row, .theme-opt, .th-tile, .font-card, .hset-tile, .gallery-tile, .drive-option, a.fcard:not(.dragging)):active { transform: scale(0.985); }
+  :is(.start-review, button.primary:not(:disabled), a.button.primary, .rail-new, a.ring, .nav-item):active { transform: scale(0.96); }
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  :is(a.note-card, a.more-row):hover { transform: translateY(-2px); }
+}
+
+/* ---------- primary actions: a lit face and a coloured glow ---------- */
+button.primary:not(:disabled), a.button.primary, .rail-new {
+  box-shadow: var(--fill-edge), inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 1px 1px light-dark(rgba(20, 16, 8, 0.12), rgba(0, 0, 0, 0.45)),
+    0 8px 20px -8px color-mix(in srgb, var(--accent) 72%, transparent);
+}
+.rail-new { box-shadow: var(--fill-edge), 0 1px 1px light-dark(rgba(20, 16, 8, 0.12), rgba(0, 0, 0, 0.45)), 0 12px 26px -8px color-mix(in srgb, var(--accent) 75%, transparent); }
+.due-card { box-shadow: var(--fill-edge), 0 1px 2px light-dark(rgba(20, 16, 8, 0.12), rgba(0, 0, 0, 0.5)), 0 26px 50px -22px color-mix(in srgb, var(--accent) 85%, transparent), var(--lift-1); }
+
+/* ---------- rest: cards and panels on the desk ---------- */
+.today .panel, .note-card, .more-row, .trash-row, .card-block { border-color: color-mix(in srgb, var(--line) 70%, transparent); }
+.nav-item[aria-current='true'] { box-shadow: inset 0 1px 0 var(--sheen), inset 0 0 0 1px var(--hair), var(--lift-1); }
+
+/* subject rings: a carved track round a lit centre */
+.ring svg { border-radius: 50%; background-image: radial-gradient(closest-side, light-dark(rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.05)) 0 56%, transparent 60%); }
+.ring svg > circle:first-of-type { stroke: color-mix(in srgb, var(--fg) 9%, var(--chip)); }
+
+/* empty states: the dashed "add" tile reads as a recess in the desk */
+.fadd { background-image: linear-gradient(180deg, color-mix(in srgb, var(--fg) 2.5%, transparent), transparent); box-shadow: inset 0 2px 6px -2px light-dark(color-mix(in srgb, var(--fg) 10%, transparent), rgba(0, 0, 0, 0.4)); }
+
+/* Today's due chips: the 0.18 44 px rule made them flex, which drops the space between the number and the word
+   (on screen and in innerText: "2words"). A block with a 32 px line box is the same 44 px target and keeps the space. */
+.due-chip { display: inline-block; line-height: 32px; }
+
+/* empty lists: a shallow tray with a ring in it, not a stray line of grey text */
+.empty-row {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 26px 20px;
+  border: 1px dashed color-mix(in srgb, var(--line) 85%, transparent);
+  border-radius: calc(16px * var(--round, 1));
+  text-align: center;
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--fg) 3%, transparent), transparent 70%);
+  box-shadow: inset 0 2px 8px -3px light-dark(color-mix(in srgb, var(--fg) 12%, transparent), rgba(0, 0, 0, 0.45));
+}
+.empty-row::before {
+  content: '';
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 6px solid color-mix(in srgb, var(--accent) 22%, var(--chip));
+  box-shadow: inset 0 1px 2px light-dark(color-mix(in srgb, var(--fg) 12%, transparent), rgba(0, 0, 0, 0.5)), 0 1px 0 var(--sheen);
+}
+
+/* ---------- overlays ---------- */
+.sheet-scrim { background-image: radial-gradient(120% 90% at 50% 40%, transparent, light-dark(rgba(20, 16, 8, 0.12), rgba(0, 0, 0, 0.3))); }
+
+/* ---------- off switches: plain where asked, nothing invented under forced colours ---------- */
+@media (prefers-reduced-transparency: reduce) {
+  .topline, .canvas-head, .rv-head, .rv-foot { background-color: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+:root[data-theme='contrast'] body::before { display: none; }
+:root[data-theme='contrast'] :is(.topline, .canvas-head, .rv-head, .rv-foot) { background-color: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (forced-colors: active) {
+  body::before, .canvas-col::before { display: none; }
+  .topline, .canvas-head, .rv-head, .rv-foot { background-color: Canvas; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .ring svg, .fadd, .sheet-scrim, .empty-row { background-image: none; box-shadow: none; }
+  .empty-row::before { display: none; }
+  button.primary, a.button.primary, .rail-new, .due-card { box-shadow: none; }
 }

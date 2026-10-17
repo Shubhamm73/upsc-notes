@@ -112,6 +112,8 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   let sub: Subscription | null = null;
   let openFrom: DOMRect | null = null;
   let focusMode = false;
+  /** Read mode (screen state only): the note can be read and scrolled but nothing in it changes. A new note always opens for writing. */
+  let readMode = false;
   /** Collapsed sections of the open note (screen state only, not saved). */
   const collapsed = new Set<string>();
   /** Editors of the open note's sections, by section id. */
@@ -147,6 +149,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     setSave(state: 'editing' | 'saved' | 'error'): void;
     live(): void;
     setFocus(on: boolean): void;
+    setRead(on: boolean): void;
     /** Repaints where the note is filed (folders renamed, recoloured or loaded). */
     place(): void;
   } | null = null;
@@ -193,6 +196,11 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       e.stopPropagation();
       if (k === 'y' || e.shiftKey) hist?.redo();
       else hist?.undo();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'e') {
+      e.preventDefault();
+      canvas.setRead(!readMode);
       return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key === '.') {
@@ -757,6 +765,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     closePopover();
     collapsed.clear();
     draft = structuredClone(n);
+    if (isNew) readMode = false;
     const d = draft;
     let activeSection: string | null = null;
 
@@ -777,6 +786,9 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       meterNum
     );
     const focusBtn = h('button', { type: 'button', class: 'head-btn', id: 'focus-toggle', 'aria-pressed': 'false', title: 'Focus mode (Ctrl + .)' }, icon('focus', 18), h('span', { class: 'head-btn-text' }, 'Focus'));
+    const editSeg = h('button', { type: 'button', class: 'seg-btn', id: 'mode-edit', 'aria-pressed': 'true', title: 'Edit this note (Ctrl + E)' }, icon('pen', 18), h('span', { class: 'head-btn-text' }, 'Edit'));
+    const readSeg = h('button', { type: 'button', class: 'seg-btn', id: 'mode-read', 'aria-pressed': 'false', title: 'Read this note: nothing can be changed by accident (Ctrl + E)' }, icon('book', 18), h('span', { class: 'head-btn-text' }, 'Read'));
+    const modeSwitch = h('span', { class: 'mode-switch', role: 'group', 'aria-label': 'Note mode' }, editSeg, readSeg);
     const undoBtn = h('button', { type: 'button', class: 'icon-btn head-undo', id: 'note-undo', 'aria-label': 'Undo', title: 'Undo (Ctrl + Z)', disabled: true }, icon('undo', 22));
     const redoBtn = h('button', { type: 'button', class: 'icon-btn head-undo', id: 'note-redo', 'aria-label': 'Redo', title: 'Redo (Ctrl + Shift + Z)', disabled: true }, icon('redo', 22));
     // Undo / Redo keep the caret and the keyboard where they are.
@@ -807,6 +819,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         saveEl,
         h('span', { class: 'undo-group', role: 'group', 'aria-label': 'Undo and redo' }, undoBtn, redoBtn),
         outlineBtn,
+        modeSwitch,
         focusBtn,
         reviewBtn,
         moreBtn
@@ -818,6 +831,8 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     // title and chips
     const title = h('textarea', { id: 'f-title', class: 'canvas-title', rows: 1, placeholder: 'Title, e.g. Separation of powers', 'aria-label': 'Title', spellcheck: 'true' });
     title.value = d.title;
+    // the page's one h1 for screen readers: the textarea above is the visible title
+    const pageHeading = h('h1', { class: 'sr-only', id: 'note-h1' }, d.title.trim() || 'New note');
     const growTitle = () => {
       title.style.height = 'auto';
       title.style.height = `${title.scrollHeight}px`;
@@ -958,7 +973,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       'div',
       { class: 'canvas editor' },
       header,
-      h('div', { class: 'canvas-body' }, h('article', { class: 'canvas-col' }, cover, title, chips, insightsHost, sectionsHost, details), outline),
+      h('div', { class: 'canvas-body' }, h('article', { class: 'canvas-col' }, pageHeading, cover, title, chips, insightsHost, sectionsHost, details), outline),
       focusExit
     );
     editorEl.replaceChildren(canvasEl);
@@ -966,8 +981,8 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
 
     // ----- Undo / Redo for the whole note -----
     const paintUndo = () => {
-      undoBtn.disabled = !noteHist.canUndo();
-      redoBtn.disabled = !noteHist.canRedo();
+      undoBtn.disabled = readMode || !noteHist.canUndo();
+      redoBtn.disabled = readMode || !noteHist.canRedo();
       tools.refresh();
     };
     /** Brings a section's change into view after Undo / Redo (without opening the keyboard). */
@@ -1094,6 +1109,12 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     const sectionMenu = (i: number): MenuItem[] => {
       const s = d.sections[i];
       const isC = collapsed.has(s.id);
+      if (readMode) {
+        return [
+          { label: isC ? 'Expand section' : 'Collapse section', run: () => toggleCollapse(s.id) },
+          { label: 'Export section as PDF', aria: `Export section ${i + 1} as PDF`, run: () => void runPdfExport({ kind: 'section', note: structuredClone(d), sectionId: s.id }, ctx) }
+        ];
+      }
       return [
         { label: isC ? 'Expand section' : 'Collapse section', run: () => toggleCollapse(s.id) },
         { label: 'Move up', aria: `Move section ${i + 1} up`, disabled: i === 0, run: () => moveSection(i, i - 1) },
@@ -1178,6 +1199,32 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     const addSectionBtn = h('button', { type: 'button', class: 'add-section', id: 'add-section' }, '+ Add section');
     addSectionBtn.addEventListener('click', addSection);
 
+    /** Read mode: every field and editor stops taking changes; the page, outline jumps, folding, PDF and review stay. */
+    function paintRead() {
+      const on = readMode;
+      canvasEl.classList.toggle('is-reading', on);
+      editSeg.setAttribute('aria-pressed', String(!on));
+      readSeg.setAttribute('aria-pressed', String(on));
+      for (const f of [title, topic, explain, connect]) f.readOnly = on;
+      for (const f of [template, styleSelect]) f.disabled = on;
+      subject.disabled = on;
+      for (const v of views.values()) {
+        v.heading.readOnly = on;
+        // a section written by a newer version stays read-only in both modes
+        if (!v.el.querySelector('.is-unreadable')) v.editor.setEditable(!on, false);
+      }
+      for (const b of [undoBtn, redoBtn]) b.disabled = on || !(b === undoBtn ? noteHist.canUndo() : noteHist.canRedo());
+    }
+    function setRead(on: boolean) {
+      if (on === readMode) return;
+      readMode = on;
+      closePopover();
+      tools.closeMenus();
+      if (on) (document.activeElement as HTMLElement | null)?.blur();
+      paintRead();
+      ctx.toast(on ? 'Reading: nothing can be changed. Tap Edit to write again.' : 'Editing: tap anywhere in the note to write.');
+    }
+
     function renderSections() {
       if (!d.sections.length) d.sections.push({ id: newId(), heading: 'Notes', doc: textToDoc('') });
       const keep = new Set(d.sections.map((s) => s.id));
@@ -1206,6 +1253,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       });
       sectionsHost.append(addSectionBtn);
       renderOutline();
+      paintRead();
       live();
     }
 
@@ -1263,6 +1311,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
 
     /** Outline rows: tap jumps; long-press (450 ms) then drag reorders. */
     function attachDrag(list: HTMLElement, row: HTMLElement, jump: HTMLButtonElement, index: number, id: string) {
+      if (readMode) return; // reading: the outline only jumps
       let timer: number | undefined;
       let startY = 0;
       let dragging = false;
@@ -1341,9 +1390,11 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
       noteHist.field('title', before, d.title, (v) => {
         d.title = String(v);
         title.value = d.title;
+        pageHeading.textContent = d.title.trim() || 'New note';
         growTitle();
         schedule();
       });
+      pageHeading.textContent = d.title.trim() || 'New note';
       growTitle();
       schedule();
     });
@@ -1459,6 +1510,8 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     };
     trashBtn.addEventListener('click', () => void toTrash());
     focusBtn.addEventListener('click', () => setFocusMode(!focusMode));
+    editSeg.addEventListener('click', () => setRead(false));
+    readSeg.addEventListener('click', () => setRead(true));
     focusExit.addEventListener('click', () => setFocusMode(false));
     moreBtn.addEventListener('click', () =>
       openPopover(
@@ -1466,16 +1519,16 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         [
           { label: 'Move to…', aria: 'Move to', run: moveTo },
           { label: 'Export note as PDF', run: () => void runPdfExport({ kind: 'note', note: structuredClone(d) }, ctx) },
+          { label: readMode ? 'Edit this note (Ctrl + E)' : 'Read this note (Ctrl + E)', run: () => setRead(!readMode) },
           { label: 'Focus mode (Ctrl + .)', run: () => setFocusMode(true) },
           {
             label: getPageWidth() === 'full' ? 'Comfortable width' : 'Full width',
-            aria: 'Note width',
             run: () => {
               setPageWidth(getPageWidth() === 'full' ? 'comfortable' : 'full');
               ctx.toast(getPageWidth() === 'full' ? 'Notes use the full screen width.' : 'Notes use a comfortable reading width.');
             }
           },
-          ...(window.matchMedia('(min-width: 1000px)').matches ? [{ label: outlineShown() ? 'Hide outline' : 'Show outline', aria: 'Outline', run: toggleOutline }] : []),
+          ...(window.matchMedia('(min-width: 1000px)').matches ? [{ label: outlineShown() ? 'Hide outline' : 'Show outline', run: toggleOutline }] : []),
           { label: 'Own words and connections', run: () => openDetails(explain) },
           { label: 'Note look', aria: 'Note look', run: openLookSheet },
           { label: 'Save as template', aria: 'Save as template', run: () => void saveAsTemplate() },
@@ -1719,9 +1772,10 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     canvas = {
       setSave,
       live,
+      setRead,
       setFocus(on) {
         focusBtn.setAttribute('aria-pressed', String(on));
-        if (on) (editors.get(activeSection ?? '') ?? editors.values().next().value)?.commands.focus();
+        if (on && !readMode) (editors.get(activeSection ?? '') ?? editors.values().next().value)?.commands.focus();
       },
       place() {
         paintSubject();
