@@ -9,6 +9,7 @@ import { ymd } from '../lib/dates';
 import { textToDoc } from '../lib/doc';
 import { h } from '../lib/h';
 import { icon } from '../lib/icons';
+import { TEMPLATES, templateOf } from '../lib/templates';
 import type { AppContext, View } from '../app';
 import { openRestore } from './drive-ui';
 import { loadGis } from '../lib/drive';
@@ -35,6 +36,7 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
   const dueHost = h('section', { class: 'due-card', 'aria-label': 'Due today' });
   const continueHost = h('section', { class: 'panel continue', 'aria-label': 'Continue writing' });
   const ringsHost = h('div', { class: 'rings' });
+  const ringsCaption = h('span', { class: 'meta' });
   // An empty app (a new or reset tablet): bring everything back from Google Drive, or from a file.
   const restoreBtn = h('button', { type: 'button', class: 'primary', id: 'today-restore' }, 'Restore from Google Drive');
   restoreBtn.addEventListener('click', () => openRestore(ctx));
@@ -77,7 +79,7 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
         h(
           'section',
           { class: 'panel', 'aria-label': 'Subject strength' },
-          h('div', { class: 'panel-head' }, h('h2', {}, 'Subject strength'), h('span', { class: 'meta' }, 'notes reviewed and on schedule')),
+          h('div', { class: 'panel-head' }, h('h2', {}, 'Subject strength'), ringsCaption),
           ringsHost
         ),
         h(
@@ -149,6 +151,9 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
     if (empty && restoreHost.hidden && navigator.onLine) void loadGis().catch(() => undefined);
     restoreHost.hidden = !empty;
     const liveNotes = notes.filter((n) => !n.deletedAt);
+    // The first note is the only primary action in main on an empty Today.
+    restoreBtn.classList.toggle('primary', liveNotes.length > 0);
+    captureBtn.classList.toggle('primary', liveNotes.length > 0);
     const due = dueItems(notes, words, cards, today);
     const count = (t: QueueItem['type']) => due.filter((i) => i.type === t).length;
     const [dueInsights, dueWords, dueNotes] = [count('insight'), count('word'), count('note')];
@@ -198,6 +203,7 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
     // Continue writing
     const lastId = await getLastNote();
     const last = liveNotes.find((n) => n.id === lastId) ?? [...liveNotes].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    continueHost.setAttribute('aria-label', last ? 'Continue writing' : 'Start from a template');
     if (last) {
       const marks = last.insights?.items.length ?? 0;
       continueHost.replaceChildren(
@@ -215,11 +221,12 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
       );
     } else {
       continueHost.replaceChildren(
-        h('p', { class: 'eyebrow' }, 'Continue writing'),
-        h('h3', { class: 'continue-title' }, 'No notes yet'),
-        h('p', { class: 'meta' }, 'Start with one concept you understood today.'),
-        h('div', { class: 'spacer' }),
-        h('a', { class: 'button primary', href: '#/n/new' }, 'New note')
+        h('p', { class: 'eyebrow' }, 'Start from a template'),
+        h('h3', { class: 'continue-title' }, 'Give your first note a shape'),
+        h('div', { class: 'template-starts' }, ...['gs-answer', 'topic-sheet', 'current-affairs'].map((id) =>
+          h('a', { class: 'button', href: `#/n/new/${id}` }, templateOf(id).name)
+        )),
+        h('a', { class: 'template-all', href: '#/n/new' }, `All ${TEMPLATES.length} templates`)
       );
     }
 
@@ -230,12 +237,15 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
       const m = index.placeOf(n).main?.id;
       if (m) byMain.set(m, [...(byMain.get(m) ?? []), n]);
     }
-    ringsHost.replaceChildren(
-      ...index
-        .roots('notes')
-        .filter((m) => m.id !== 'main:Others' || byMain.has(m.id))
-        .map((m) => subjectRing(m.name, ringOf(byMain.get(m.id) ?? [], today), { colour: index.colour(m), href: `#/notes/f/${encodeURIComponent(m.id)}` }))
-    );
+    const rings = index.roots('notes')
+      .filter((m) => m.id !== 'main:Others' || byMain.has(m.id))
+      .map((m) => ({ main: m, value: ringOf(byMain.get(m.id) ?? [], today) }));
+    ringsCaption.textContent = rings.every((r) => r.value === null)
+      ? 'Fills as you review your notes'
+      : 'notes reviewed and on schedule';
+    ringsHost.replaceChildren(...rings.map(({ main: m, value }) =>
+      subjectRing(m.name, value, { colour: index.colour(m), href: `#/notes/f/${encodeURIComponent(m.id)}` })
+    ));
   }
 
   const sub = liveQuery(() => Promise.all([db.notes.toArray(), db.vocab.toArray(), db.cards.where('due').belowOrEqual(ymd()).toArray(), db.folders.toArray()])).subscribe({

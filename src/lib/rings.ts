@@ -50,7 +50,7 @@ export function subjectRing(name: string, value: number | null, opts: { colour: 
     svg.append(g);
   }
   const label = svgEl('text', { x: '32', y: '37', 'text-anchor': 'middle', 'font-size': '14', 'font-weight': '700', fill: 'var(--fg)' });
-  label.textContent = value === null ? '–' : `${value}%`;
+  label.textContent = value === null ? '' : `${value}%`;
   svg.append(label);
   return opts.href ? h('a', { class: 'ring', href: opts.href }, svg, h('span', {}, name)) : h('div', { class: 'ring' }, svg, h('span', {}, name));
 }

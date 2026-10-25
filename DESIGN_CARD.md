@@ -31,7 +31,7 @@
 ## Screenshots for the judge
 `npm run build`, then `npx vite preview --port 4173 &` (it listens on localhost/IPv6 only: use `localhost`, not 127.0.0.1), then
 `node /Users/shubhamsingh/Python/tools/shots.mjs http://localhost:4173/upsc-notes/ <review dir> --widths 800,1280 --theme both --name after --wait 2000 --sheet`
-Fresh profile = first-run state (no notes). Stop the server with `lsof -ti tcp:4173 -sTCP:LISTEN | xargs kill` (never `pkill -f "vite preview"`). Then `scripts/run-suites.sh` (baseline 0.18.0: 27 suites, 1536 checks).
+Fresh profile = first-run state (no notes). Stop the server with `lsof -ti tcp:4173 -sTCP:LISTEN | xargs kill` (never `pkill -f "vite preview"`). Then `PATH="$HOME/.venvs/upsc-notes/bin:$PATH" scripts/run-suites.sh` (system python3 lacks playwright/PIL; put this exact form in BRIEF Acceptance). Baseline 0.18.1: 28 suites, 1585 checks.
 
 ## Reference shots (Opus-approved 2026-10-25)
 - `docs/design-ref/ref-1280-light.png`: Today, landscape, Day.

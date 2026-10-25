@@ -564,6 +564,8 @@ button.danger-solid { background: var(--error); border-color: var(--error); colo
 .continue-title { margin: 0; font: var(--head-weight, 600) 1.5rem/1.2 var(--font-head); }
 .chip-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .continue .button { align-self: flex-start; }
+.template-starts { display: flex; flex-wrap: wrap; gap: 8px; }
+.template-all { display: inline-flex; align-items: center; align-self: flex-start; min-height: 44px; }
 .rings { display: grid; grid-template-columns: repeat(auto-fit, minmax(62px, 1fr)); gap: 10px 6px; }
 .ring { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--fg); text-decoration: none; font-size: 0.78rem; font-weight: 700; text-align: center; line-height: 1.2; border-radius: calc(12px * var(--round, 1)); padding: 4px 0; }
 .ring:hover { background: var(--chip); }
