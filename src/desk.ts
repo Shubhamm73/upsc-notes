@@ -19,24 +19,26 @@ export function mountDesk() {
   document.documentElement.dataset.desk = 'true';
   const line = document.querySelector('.topline');
   const rail = document.querySelector('.rail');
-  const tools = h('div', { class: 'desk-tools', 'aria-label': 'Workspace tools' });
+  const tools = h('div', { class: 'desk-tools', role: 'group', 'aria-label': 'Workspace tools' });
+  const controls = h('div', { class: 'desk-controls' });
   const guide = h('button', { type: 'button', class: 'pilot-guide-button', id: 'pilot-guide-open', 'aria-haspopup': 'dialog' }, icon('book', 18), h('span', {}, 'Writing guide'));
   guide.addEventListener('click', writingGuide);
   const navigation = h('button', { type: 'button', id: 'navigation-toggle', class: 'icon-btn', title: 'Show or hide navigation', 'aria-label': 'Hide navigation', 'aria-expanded': 'true' }, icon('sidebar', 20));
   navigation.addEventListener('click', () => {
     const collapsed = document.body.classList.toggle('navigation-hidden');
     if (collapsed) document.querySelector('.content')?.prepend(navigation);
-    else tools.prepend(navigation);
+    else controls.prepend(navigation);
     navigation.setAttribute('aria-expanded', String(!collapsed));
     navigation.setAttribute('aria-label', collapsed ? 'Show navigation' : 'Hide navigation');
     if (matchMedia('(min-width: 900px)').matches || collapsed) navigation.focus();
   });
-  tools.append(navigation, guide);
+  controls.append(navigation, guide);
   for (const control of line?.querySelectorAll('.save-status, .install') ?? []) tools.append(control);
   line?.querySelector('.search-top')?.remove();
   if (line instanceof HTMLElement) line.hidden = true;
   rail?.append(tools);
   rail?.prepend(h('a', { class: 'pilot-rail-brand', href: '#/', 'aria-label': 'u. Study Notes home' }, h('span', { class: 'pilot-monogram', 'aria-hidden': 'true' }, 'u.'), h('span', { class: 'pilot-rail-wordmark' }, 'Study Notes')));
+  rail?.querySelector('.pilot-rail-brand')?.after(controls);
   for (const item of rail?.querySelectorAll('.nav-item') ?? []) {
     const text = [...item.childNodes].find((node) => node.nodeType === Node.TEXT_NODE);
     if (text) text.replaceWith(h('span', { class: 'pilot-nav-label' }, text.textContent ?? ''));

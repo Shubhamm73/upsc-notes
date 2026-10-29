@@ -359,3 +359,16 @@ body.focus-mode #navigation-toggle, body.writing #navigation-toggle, body.review
   .desk-tools > button { display: none; }
   .rail .pilot-nav-key { display: none; }
 }
+
+/* Compact tools sit below the wordmark; the writing rail keeps only its toggle. */
+.desk-controls { display: flex; align-items: center; justify-content: center; gap: 6px; margin: -8px 0 12px; flex-shrink: 0; }
+.desk-controls #navigation-toggle { width: 44px; min-height: 44px; }
+.desk-controls .pilot-guide-button { display: none; }
+body.navigation-hidden { --bar-h: 64px; }
+body.navigation-hidden #navigation-toggle { top: max(10px, env(safe-area-inset-top)); left: 24px; }
+@media (min-width: 1180px) {
+  body:not(.editing):not(.reviewing) .desk-controls { justify-content: flex-start; }
+  body:not(.editing):not(.reviewing) .desk-controls .pilot-guide-button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 10px; gap: 6px; font-size: .72rem; border-radius: 999px; white-space: nowrap; }
+  .desk-controls .pilot-guide-button svg { width: 14px; height: 14px; }
+}
+@media (max-width: 899px) { .rail .desk-controls { display: none; } body.navigation-hidden #navigation-toggle { left: 14px; } }

@@ -181,3 +181,7 @@ Font styles: Study desk (Source Serif 4 + Atkinson Hyperlegible, default), Edito
 ## 0.19.1 — cleaner workspace (2026-10-29)
 
 Removed the main top strip. Writing guide, navigation toggle, install and save status live in the side panel. Phone navigation includes Search; More contains Writing guide and Hide navigation. A floating reopen button remains available when navigation is hidden. Existing editor, storage, backups and Google Drive behavior are unchanged.
+
+## 0.19.2 — compact sidebar tools (2026-10-29)
+
+Writing guide is a small pill beside the toggle below the expanded sidebar branding. Compact writing navigation hides the guide. The collapsed-sidebar reopen button aligns with the page inset, and sticky note controls reserve its top space.
