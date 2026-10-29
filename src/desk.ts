@@ -5,9 +5,9 @@ import { h } from './lib/h';
 import { icon } from './lib/icons';
 import { openSheet } from './lib/sheet';
 
-function writingGuide() {
+export function writingGuide() {
   openSheet({ title: 'Your writing workspace', id: 'writing-guide', body: [
-    h('p', {}, 'Give your notes the room they need. Hide navigation with the top-left button, toggle the outline in the note header, or enter Focus for uninterrupted writing.'),
+    h('p', {}, 'Give your notes the room they need. Hide navigation from the side panel or More, toggle the outline in the note header, or enter Focus for uninterrupted writing.'),
     h('h3', {}, 'Keep your place'), h('p', {}, 'Open-note tabs remember your position during this visit. Closing a tab only removes it from the strip; your saved note stays in its folder.'),
     h('h3', {}, 'Read beside your writing'), h('p', {}, 'Use Reference to consult another note without editing it. Search with Ctrl K to preview a note and open the matching section. Arrow keys choose a result; Enter opens it.'),
     h('h3', {}, 'Review with a plan'), h('p', {}, 'On Today, Plan a session previews the due items for your chosen subject and available time. Start review still opens your usual queue.'),
@@ -18,19 +18,24 @@ function writingGuide() {
 export function mountDesk() {
   document.documentElement.dataset.desk = 'true';
   const line = document.querySelector('.topline');
-  line?.setAttribute('role', 'banner');
-  const guide = h('button', { type: 'button', class: 'pilot-guide-button', id: 'pilot-guide-open', 'aria-haspopup': 'dialog' }, h('span', { class: 'pilot-dot', 'aria-hidden': 'true' }), 'Writing guide', icon('arrow', 16));
+  const rail = document.querySelector('.rail');
+  const tools = h('div', { class: 'desk-tools', 'aria-label': 'Workspace tools' });
+  const guide = h('button', { type: 'button', class: 'pilot-guide-button', id: 'pilot-guide-open', 'aria-haspopup': 'dialog' }, icon('book', 18), h('span', {}, 'Writing guide'));
   guide.addEventListener('click', writingGuide);
-  const brand = h('a', { class: 'pilot-brand', href: '#/' }, h('span', { class: 'pilot-monogram', 'aria-hidden': 'true' }, 'u.'), h('span', {}, h('strong', {}, 'Study Notes'), h('small', {}, 'Your study desk')));
   const navigation = h('button', { type: 'button', id: 'navigation-toggle', class: 'icon-btn', title: 'Show or hide navigation', 'aria-label': 'Hide navigation', 'aria-expanded': 'true' }, icon('sidebar', 20));
   navigation.addEventListener('click', () => {
     const collapsed = document.body.classList.toggle('navigation-hidden');
+    if (collapsed) document.querySelector('.content')?.prepend(navigation);
+    else tools.prepend(navigation);
     navigation.setAttribute('aria-expanded', String(!collapsed));
     navigation.setAttribute('aria-label', collapsed ? 'Show navigation' : 'Hide navigation');
+    if (matchMedia('(min-width: 900px)').matches || collapsed) navigation.focus();
   });
-  line?.prepend(navigation, brand);
-  line?.append(guide);
-  const rail = document.querySelector('.rail');
+  tools.append(navigation, guide);
+  for (const control of line?.querySelectorAll('.save-status, .install') ?? []) tools.append(control);
+  line?.querySelector('.search-top')?.remove();
+  if (line instanceof HTMLElement) line.hidden = true;
+  rail?.append(tools);
   rail?.prepend(h('a', { class: 'pilot-rail-brand', href: '#/', 'aria-label': 'u. Study Notes home' }, h('span', { class: 'pilot-monogram', 'aria-hidden': 'true' }, 'u.'), h('span', { class: 'pilot-rail-wordmark' }, 'Study Notes')));
   for (const item of rail?.querySelectorAll('.nav-item') ?? []) {
     const text = [...item.childNodes].find((node) => node.nodeType === Node.TEXT_NODE);

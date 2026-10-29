@@ -1,6 +1,6 @@
 /* Study desk: a study desk, a subject library, a page for thought.
    All materials use the existing theme, density, radius and elevation system. */
-html[data-desk] { scroll-padding-top: 100px; }
+html[data-desk] { scroll-padding-top: 12px; }
 .pilot-brand { min-width: 44px; display: inline-flex; gap: 10px; align-items: center; margin-right: auto; color: var(--fg); text-decoration: none; min-height: 44px; }
 .pilot-brand strong { display: block; font: var(--head-weight) 1.1rem/1.25 var(--font-head); }
 .pilot-brand small { display: block; color: var(--muted); font-size: .75rem; }
@@ -334,3 +334,28 @@ body.reference-open .outline { display: none !important; }
 .search-body { min-height: 0; overflow: hidden; }
 .search-body .search-results { align-content: start; }
 .search-body .search-results, .search-preview { max-height: max(120px, calc(70dvh - 120px)); }
+
+/* The page starts at the top: workspace controls belong to navigation. */
+html[data-desk] .topline[hidden] { display: none !important; }
+.desk-tools { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; border-top: 1px solid var(--line); padding-top: 12px; }
+.desk-tools .pilot-guide-button { display: flex; flex-direction: column; gap: 4px; width: 70px; padding: 8px 2px; white-space: normal; font-size: .7rem; line-height: 1.3; }
+.desk-tools .save-status { font-size: .68rem; text-align: center; overflow-wrap: anywhere; }
+.desk-tools .install { width: 100%; white-space: normal; font-size: .75rem; padding: 8px; }
+.rail { overflow-y: auto; }
+body.navigation-hidden #navigation-toggle { position: fixed; top: max(8px, env(safe-area-inset-top)); left: 8px; z-index: 9; width: 44px; min-height: 44px; box-shadow: var(--lift-2); }
+body.navigation-hidden #view { padding-top: 64px; }
+body.focus-mode #navigation-toggle, body.writing #navigation-toggle, body.reviewing #navigation-toggle { display: none !important; }
+.workspace-settings .more-row { width: 100%; justify-content: flex-start; gap: 12px; text-align: left; min-height: 48px; }
+.workspace-settings .more-row > svg:last-child { margin-left: auto; }
+@media (min-width: 1180px) {
+  body:not(.editing):not(.reviewing) .desk-tools { align-items: stretch; }
+  body:not(.editing):not(.reviewing) .desk-tools .pilot-guide-button { flex-direction: row; gap: 10px; width: 100%; padding: 10px 12px; font-size: .8rem; }
+  body:not(.editing):not(.reviewing) .desk-tools .save-status { text-align: left; }
+}
+@media (max-width: 899px) {
+  .rail .rail-search { display: flex; flex-direction: column; gap: 6px; width: auto; flex: 1; max-width: 120px; min-height: 56px; font-size: 13px; order: 1; }
+  .rail .rail-search .pilot-nav-label { display: inline; }
+  .rail .desk-tools { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); }
+  .desk-tools > button { display: none; }
+  .rail .pilot-nav-key { display: none; }
+}

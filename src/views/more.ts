@@ -1,3 +1,4 @@
+import { writingGuide } from '../desk';
 import { db, getMeta } from '../db';
 import { daysSince } from '../lib/dates';
 import { h } from '../lib/h';
@@ -16,6 +17,16 @@ export function mountMore(root: HTMLElement, ctx: AppContext): View {
   installBtn.addEventListener('click', async () => {
     if (!(await ctx.install())) ctx.toast('Use the Chrome ⋮ menu, then Install app.');
   });
+
+  const guide = h('button', { type: 'button', id: 'more-writing-guide', class: 'more-row', 'aria-haspopup': 'dialog' }, icon('book'), 'Writing guide', icon('arrow', 18));
+  guide.addEventListener('click', writingGuide);
+  const navigationLabel = h('span');
+  const navigation = h('button', { type: 'button', id: 'more-navigation', class: 'more-row' }, icon('sidebar'), navigationLabel);
+  const toggle = document.querySelector<HTMLButtonElement>('#navigation-toggle');
+  const refreshNavigation = () => { navigationLabel.textContent = document.body.classList.contains('navigation-hidden') ? 'Show navigation' : 'Hide navigation'; };
+  refreshNavigation();
+  toggle?.addEventListener('click', refreshNavigation);
+  navigation.addEventListener('click', () => toggle?.click());
 
   root.replaceChildren(
     h(
@@ -38,6 +49,7 @@ export function mountMore(root: HTMLElement, ctx: AppContext): View {
             h('p', {}, 'The installed app opens from the home screen, works without internet, and keeps your notes safer.'),
             h('div', { class: 'actions' }, installBtn)
           ),
+      h('section', { class: 'card-block workspace-settings' }, h('h2', {}, 'Writing workspace'), guide, navigation),
       h('p', { class: 'version' }, `UPSC Study Notes · version ${__APP_VERSION__}`)
     )
   );
@@ -69,5 +81,5 @@ export function mountMore(root: HTMLElement, ctx: AppContext): View {
     trashCount.textContent = n ? `${n} ${n === 1 ? 'item' : 'items'} waiting` : 'Empty';
   });
 
-  return { route() {}, async flush() {}, async destroy() {} };
+  return { route() {}, async flush() {}, async destroy() { toggle?.removeEventListener('click', refreshNavigation); } };
 }

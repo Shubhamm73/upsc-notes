@@ -177,3 +177,7 @@ Subject colours (day/night CSS vars `--sub-*`): GS1 ochre, GS2 indigo, GS3 teal,
 Callout colours (`--co-*`): Article blue, Case berry, Data teal, Example amber, Way forward green; PDF uses fixed day colours from `src/lib/callouts.ts`.
 Font styles: Study desk (Source Serif 4 + Atkinson Hyperlegible, default), Editorial (Literata + Public Sans), Academic (EB Garamond + Libre Franklin), Clean professional (IBM Plex Serif + Sans), Notebook (Caveat + Nunito), Bold & friendly (Fraunces + Nunito). PDFs keep Roboto.
 
+
+## 0.19.1 — cleaner workspace (2026-10-29)
+
+Removed the main top strip. Writing guide, navigation toggle, install and save status live in the side panel. Phone navigation includes Search; More contains Writing guide and Hide navigation. A floating reopen button remains available when navigation is hidden. Existing editor, storage, backups and Google Drive behavior are unchanged.

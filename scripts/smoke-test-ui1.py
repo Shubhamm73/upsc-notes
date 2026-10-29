@@ -104,7 +104,7 @@ with sync_playwright() as p:
     box = pp.locator(".rail").bounding_box()
     check(box["y"] > 1100 and box["width"] > 700, f"portrait: navigation is a bottom bar ({box})")
     check(not pp.locator(".rail-new").is_visible(), "portrait: rail-only buttons hidden")
-    check(pp.locator(".search-top").is_visible(), "portrait: search button in the top line")
+    check(pp.locator(".rail-search").is_visible(), "portrait: search button in the bottom navigation")
     check(not pp.evaluate("document.documentElement.scrollWidth > window.innerWidth"), "portrait: no sideways scroll")
     pp.screenshot(path=str(OUT / "today-portrait.png"))
     pp.goto(URL + "#/prefs")
