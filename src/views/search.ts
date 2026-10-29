@@ -1,5 +1,6 @@
-import { db } from '../db';
-import { calloutsIn, noteSearchText } from '../lib/doc';
+import { showReference } from '../workspace';
+import { db, type Note } from '../db';
+import { calloutsIn, docToText, noteSearchText } from '../lib/doc';
 import { h } from '../lib/h';
 import { icon } from '../lib/icons';
 import { FolderIndex } from '../lib/folders';
@@ -10,21 +11,33 @@ let open: HTMLElement | null = null;
 /** Search everything (Ctrl + K): notes and words, from any screen. */
 export function openSearch(ctx: AppContext) {
   if (open) return;
-  const input = h('input', { type: 'search', id: 'global-search', placeholder: 'Search notes and words', 'aria-label': 'Search notes and words', autocomplete: 'off' });
+  const before = document.activeElement as HTMLElement | null;
+  let selected = 0;
+  const input = h('input', { type: 'search', id: 'global-search', role: 'combobox', 'aria-controls': 'search-results', 'aria-expanded': 'true', 'aria-autocomplete': 'list', placeholder: 'Search notes and words', 'aria-label': 'Search notes and words', autocomplete: 'off' });
   const results = h('ul', { class: 'search-results', id: 'search-results', role: 'listbox' });
   const closeBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Close search' }, icon('close', 20));
-  const panel = h('div', { class: 'search-panel', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Search' }, h('div', { class: 'search-row' }, icon('search', 20), input, closeBtn), results);
+  const previews = new Map<HTMLAnchorElement, Note>();
+  const preview = h('aside', { class: 'search-preview', 'aria-label': 'Note preview', hidden: true });
+  const panel = h('div', { class: 'search-panel', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Search' }, h('div', { class: 'search-row' }, icon('search', 20), input, closeBtn), h('div', { class: 'search-body' }, results, preview), h('p', { class: 'search-footer meta' }, '↑ ↓ to choose · Enter to open at the matching section · Esc to close'));
   const overlay = h('div', { class: 'search-overlay' }, panel);
   open = overlay;
   document.body.append(overlay);
   input.focus();
 
   const close = () => {
+    seq++;
     overlay.remove();
     open = null;
+    if (before?.isConnected) before.focus({ preventScroll: true });
     document.removeEventListener('keydown', onKey, true);
   };
   const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Tab') {
+      const focusable = [...panel.querySelectorAll<HTMLElement>('input,button,a[href]')];
+      const first = focusable[0], last = focusable.at(-1);
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    }
     if (e.key === 'Escape') {
       e.preventDefault();
       close();
@@ -40,8 +53,11 @@ export function openSearch(ctx: AppContext) {
   const run = async () => {
     const q = input.value.trim().toLowerCase();
     const mine = ++seq;
+    selected = 0;
+    previews.clear(); preview.hidden = true;
+    input.removeAttribute('aria-activedescendant');
     if (!q) {
-      results.replaceChildren(h('li', { class: 'search-hint' }, 'Type a word, a case name, an article number…'));
+      results.replaceChildren(h('li', { class: 'search-hint', role: 'option', 'aria-disabled': 'true' }, 'Type a word, a case name, an article number…'));
       return;
     }
     const [notes, words, folders] = await Promise.all([db.notes.toArray(), db.vocab.toArray(), db.folders.toArray()]);
@@ -91,14 +107,22 @@ export function openSearch(ctx: AppContext) {
     }
     if (noteHits.length) items.push(h('li', { class: 'list-divider' }, `Notes · ${noteHits.length}`));
     for (const { n, hint } of noteHits) {
+      const section = n.sections.find(s => `${s.heading} ${docToText(s.doc)}`.toLowerCase().includes(q));
+      const text = section ? docToText(section.doc).replace(/\s+/g, ' ') : '';
+      const at = Math.max(0, text.toLowerCase().indexOf(q) - 45);
+      const snippet = text ? `${at ? '…' : ''}${text.slice(at, at + 165)}${text.length > at + 165 ? '…' : ''}` : '';
+      const target = `#/n/${n.id}${section ? `/section/${encodeURIComponent(section.id)}` : ''}`;
       const a = h(
         'a',
-        { href: `#/n/${n.id}`, class: 'search-hit' },
+        { href: target, class: 'search-hit' },
         h('strong', {}, n.title || 'Untitled note'),
         h('span', { class: 'meta' }, [idx.label(n), n.topic].filter(Boolean).join(' · ')),
-        hint ? h('span', { class: 'meta callout-hit' }, hint) : null
+        hint ? h('span', { class: 'meta callout-hit' }, hint) : null,
+        section ? h('span', { class: 'search-section' }, section.heading || 'Untitled section') : null,
+        snippet ? h('span', { class: 'search-snippet' }, snippet) : null
       );
-      a.addEventListener('click', (e) => (e.preventDefault(), go(`#/n/${n.id}`)()));
+      previews.set(a, n);
+      a.addEventListener('click', (e) => (e.preventDefault(), go(target)()));
       items.push(h('li', {}, a));
     }
     if (wordHits.length) items.push(h('li', { class: 'list-divider' }, `Words · ${wordHits.length}`));
@@ -107,15 +131,36 @@ export function openSearch(ctx: AppContext) {
       a.addEventListener('click', (e) => (e.preventDefault(), go(`#/v/${w.id}`)()));
       items.push(h('li', {}, a));
     }
-    if (!items.length) items.push(h('li', { class: 'search-hint' }, `Nothing matches “${input.value.trim()}”.`));
+    if (!items.length) items.push(h('li', { class: 'search-hint', role: 'option', 'aria-disabled': 'true' }, `Nothing matches “${input.value.trim()}”.`));
+    for (const item of items) if (!item.classList.contains('search-hint')) item.setAttribute('role', 'presentation');
     results.replaceChildren(...items);
+    markSelected();
   };
   input.addEventListener('input', () => void run());
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      const first = results.querySelector<HTMLAnchorElement>('a.search-hit');
-      first?.click();
+  function markSelected() {
+    const links = [...results.querySelectorAll<HTMLAnchorElement>('a.search-hit')];
+    links.forEach((link, i) => { link.onpointerenter = () => { if (selected !== i) { selected = i; markSelected(); } }; link.setAttribute('role', 'option'); link.setAttribute('aria-selected', String(i === selected)); link.classList.toggle('search-selected', i === selected); link.id = `search-hit-${i}`; });
+    const active = links[selected];
+    const note = active ? previews.get(active) : null;
+    preview.hidden = !note;
+    if (note) {
+      const useReference = h('button', { type: 'button', class: 'search-reference' }, 'Use as reference');
+      useReference.addEventListener('click', () => { close(); void showReference(note.id); });
+      preview.replaceChildren(h('span', { class: 'eyebrow' }, 'Preview · read only'), h('h2', {}, note.title || 'Untitled note'),
+        ...note.sections.map(section => h('section', {}, h('h3', {}, section.heading || 'Untitled section'), h('p', {}, docToText(section.doc)))),
+        ...(document.body.classList.contains('editing') ? [useReference] : []));
     }
+
+    if (active) input.setAttribute('aria-activedescendant', active.id);
+    else input.removeAttribute('aria-activedescendant');
+  }
+  input.addEventListener('keydown', (e) => {
+    const links = [...results.querySelectorAll<HTMLAnchorElement>('a.search-hit')];
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && links.length) {
+      e.preventDefault();
+      selected = (selected + (e.key === 'ArrowDown' ? 1 : -1) + links.length) % links.length;
+      markSelected(); links[selected].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') { e.preventDefault(); links[selected]?.click(); }
   });
   void run();
 }

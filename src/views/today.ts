@@ -1,3 +1,4 @@
+import { openSessionPlanner } from '../study-session';
 import { liveQuery } from 'dexie';
 import { db, newId, type Folder, type Note, type ReviewCard, type Vocab } from '../db';
 import { buildSession, dueItems, minutesFor, type QueueItem } from '../lib/review';
@@ -185,11 +186,13 @@ export function mountToday(root: HTMLElement, ctx: AppContext): View {
       );
       const first = buildSession(due).queue[0];
       const start = h('a', { class: 'start-review', id: 'start-review', href: '#/review' }, 'Start review', icon('arrow', 20));
+      const plan = h('button', { type: 'button', id: 'plan-session', class: 'plan-session' }, 'Plan a session');
+      plan.addEventListener('click', () => void openSessionPlanner(ctx));
       dueHost.replaceChildren(
         h('div', { class: 'panel-head' }, h('h2', {}, 'Due today'), h('span', { id: 'due-summary' }, `${total} ${total === 1 ? 'item' : 'items'} · about ${minutesFor(due)} min`)),
         chips,
         h('p', { class: 'due-next' }, `Starts with ${firstLabel(first)}.`),
-        start
+        h('div', { class: 'review-actions' }, start, plan)
       );
     } else {
       const write = h('a', { class: 'start-review', href: '#/n/new' }, 'Write a new note', icon('arrow', 20));

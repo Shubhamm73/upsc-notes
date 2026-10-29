@@ -18,6 +18,8 @@ import '@fontsource/fraunces/latin-600.css';
 import '@fontsource/ibm-plex-mono/latin-400.css';
 import { applyAppearance } from './lib/prefs';
 import './styles.css';
+import './desk.css';
+import { mountDesk } from './desk';
 import { registerSW } from 'virtual:pwa-register';
 import { startApp } from './app';
 
@@ -42,3 +44,5 @@ startApp(document.getElementById('app')!, {
     void updateSW(true);
   }
 });
+
+mountDesk();

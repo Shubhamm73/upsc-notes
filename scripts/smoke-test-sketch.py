@@ -51,7 +51,8 @@ SEQ = """async ([idx, steps]) => {
   }
 }"""
 
-# Opaque pixels of the sketch's canvas: in a box (fractions), or as the thickness of a horizontal line at column fx.
+# Ink pixels in a box, or alpha-integrated line thickness at column fx.
+# Integrating antialiasing avoids whole-pixel rounding changing the pressure ratio as the page width changes.
 INK = """([idx, x0, y0, x1, y1]) => {
   const c = document.querySelectorAll('.sketch-ink')[idx]; const g = c.getContext('2d');
   const d = g.getImageData(Math.round(x0 * c.width), Math.round(y0 * c.height), Math.max(1, Math.round((x1 - x0) * c.width)), Math.max(1, Math.round((y1 - y0) * c.height))).data;
@@ -60,7 +61,7 @@ THICK = """([idx, fx, fy]) => {
   const c = document.querySelectorAll('.sketch-ink')[idx]; const g = c.getContext('2d');
   const x = Math.round(fx * c.width), y = Math.round(fy * c.height);
   const d = g.getImageData(x, Math.max(0, y - 40), 1, 80).data; let n = 0;
-  for (let i = 3; i < d.length; i += 4) if (d[i] > 60) n++; return n / (c.width / document.querySelectorAll('.sketch-paper')[idx].clientWidth); }"""
+  for (let i = 3; i < d.length; i += 4) n += d[i] / 255; return n / (c.width / document.querySelectorAll('.sketch-paper')[idx].clientWidth); }"""
 COLOR_AT = """([idx, fx, fy]) => { const c = document.querySelectorAll('.sketch-ink')[idx]; const g = c.getContext('2d');
   const d = g.getImageData(Math.round(fx * c.width), Math.round(fy * c.height), 1, 1).data; return [d[0], d[1], d[2], d[3]]; }"""
 

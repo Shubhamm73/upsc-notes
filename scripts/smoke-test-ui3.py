@@ -258,8 +258,8 @@ with sync_playwright() as p:
 
     page.goto(URL + "#/")
     expect(page.locator("#due-summary")).to_have_text("6 items · about 4 min", timeout=5000)
-    check(page.inner_text("#due-insights").strip() == "3 key lines" and page.get_attribute("#due-insights", "href") == "#/review/insights", "Today chip: key lines start an insight session")
-    check(page.inner_text("#due-words").strip() == "2 words" and page.inner_text("#due-notes").strip() == "1 note", "Today chips: words and notes")
+    check(" ".join(page.text_content("#due-insights").split()) == "3 key lines" and page.get_attribute("#due-insights", "href") == "#/review/insights", "Today chip: key lines start an insight session")
+    check(" ".join(page.text_content("#due-words").split()) == "2 words" and " ".join(page.text_content("#due-notes").split()) == "1 note", "Today chips: words and notes")
     check(page.get_attribute("#start-review", "href") == "#/review", "Start review opens the session")
     check("a key line from Fundamental Rights vs DPSP" in page.inner_text(".due-next"), "Today says what the session starts with")
 

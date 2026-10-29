@@ -2,7 +2,7 @@
 
 Offline-first study-notes PWA for one UPSC aspirant (owner's brother) on a **Samsung Galaxy Tab S8**.
 Owner: Shubham (GitHub `Shubhamm73`). Live: https://shubhamm73.github.io/upsc-notes/ (GitHub Pages via Actions on push to `main`).
-Current version: **0.18.1 (first-run Today: one primary action, template starters, empty rings)**. UI-4 is closed; nothing queued.
+Current version: **0.19.0 (study desk: immersive workspace, section search/reference and planned review)**. UI-4 is closed; nothing queued.
 
 **Read this before doing anything: the work order is the "Six-asks plan" table below (R1–R6), then the rest of UI-4.** On 13 Oct 2026 the six-asks plan (UPSC Notes Redesign Plan artifact) recommended moving UI-4 after the six asks, but this file was written with the UI-4 plan instead, so 0.9.0 built Sketch and the next session started UI-4 step 2 again. The owner confirmed (13 Oct 2026, "go ahead with the recommended plan steps"): six asks first, every recommended decision, UI-4 U4-2…U4-4 after them. Sketch (0.9.0) stays.
 
@@ -54,6 +54,10 @@ scripts/smoke-test*.py Playwright checks (run against `npx vite preview --port 4
 ```
 
 Routes: `#/` Today · `#/review` (`/insights`, `/words`, `/notes`) · `#/notes` (main subjects) · `#/notes/f/<folder id>` (a main subject or a subject; ids URI-encoded, e.g. `main%3AGS1`) · `#/notes/due` · `#/notes/s/<subject>` (0.6–0.9 links → `main:<subject>`) · `#/n/<id>` · `#/n/new` (template picker) / `#/n/new/<template>` (any of the 19 ids, or `my:…`) · `#/vocab` (months) · `#/vocab/f/<wm:YYYY-MM | wd:YYYY-MM-DD>` · `#/vocab/due` · `#/v/<id>` · `#/more` · `#/prefs` · `#/settings` · `#/trash`.
+
+## 0.19.0 workspace
+Navigation and outline can hide independently; Focus uses the full writing canvas. Open-note tabs retain the working set and scroll positions during this visit only; closing a tab does not delete a note. Search previews rich notes as text and opens matching sections. Reference renders another saved note read-only. Today → Plan a session previews due items by main subject and time budget using the existing review queue and estimates; schedules change only when rated.
+Production IndexedDB, schema, backup/import format, Google Drive configuration and PWA identity remain unchanged. No sample notes are seeded. Use the existing update banner → Reload now so pending edits flush before activation. The original stable URL remains the installation and OAuth redirect URL.
 
 ## Commands
 ```

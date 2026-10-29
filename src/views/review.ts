@@ -1,3 +1,4 @@
+import { takeSessionPlan, plannedItems } from '../study-session';
 import type { Editor } from '@tiptap/core';
 import { db, type Note } from '../db';
 import { createEditor } from '../editor/editor';
@@ -61,6 +62,7 @@ function ringsByMain(notes: Note[], today: string): Map<string, number | null> {
  * Every rating is saved the moment it is made; the session itself is screen state only.
  */
 export function mountReview(root: HTMLElement, ctx: AppContext): View {
+  const sessionPlan = takeSessionPlan();
   let filter: SessionFilter = 'all';
   let queue: QueueItem[] = [];
   let index = 0;
@@ -128,7 +130,7 @@ export function mountReview(root: HTMLElement, ctx: AppContext): View {
     if (my !== token) return;
     fidx = new FolderIndex(folders);
     const built = buildSession(due, filter);
-    queue = built.queue;
+    queue = sessionPlan ? plannedItems(due, fidx, sessionPlan) : built.queue;
     index = 0;
     revealed = false;
     inSummary = false;
@@ -476,7 +478,7 @@ export function mountReview(root: HTMLElement, ctx: AppContext): View {
     const today = ymd();
     const [{ items: due, notes }, streak] = await Promise.all([loadDue(today), currentStreak()]);
     if (my !== token) return;
-    const more = filterItems(due, filter).length;
+    const more = sessionPlan ? plannedItems(due, fidx, sessionPlan).length : filterItems(due, filter).length;
     paintHead();
     const mins = Math.round((Date.now() - startedAt) / 60000);
     const items = [...seen.values()];

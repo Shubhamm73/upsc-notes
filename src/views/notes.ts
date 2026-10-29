@@ -1,3 +1,4 @@
+import { mountWorkspace, jumpToSearchSection } from '../workspace';
 import { liveQuery, type Subscription } from 'dexie';
 import type { Editor } from '@tiptap/core';
 import { db, newId, type DocNode, type Folder, type Note, type Section, type Vocab } from '../db';
@@ -173,7 +174,10 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
   }
 
   /** Called whenever a note is closed: saves, then clears out images nothing uses any more. */
+  let leaveWorkspace: (() => void) | null = null;
   async function closeNote() {
+    leaveWorkspace?.(); leaveWorkspace = null;
+    document.body.classList.remove('compact-outline-open');
     if (dirty) await save();
     const closing = draft;
     closePopover();
@@ -186,7 +190,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
 
   // Ctrl + . focus mode; Esc closes a menu first, then leaves focus mode.
   const onKey = (e: KeyboardEvent) => {
-    if (!draft || !canvas) return;
+    if (!draft || !canvas || (e.target as HTMLElement | null)?.closest('#reference-pane')) return;
     // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y: the note-wide Undo / Redo, wherever the caret is in the note.
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === 'z' || k === 'y')) {
@@ -348,8 +352,20 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         parts.push(listEl);
       } else {
         const recent = [...notes].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
-        if (recent.length) parts.push(h('section', { class: 'recent', 'aria-label': 'Recent notes' }, h('h2', { class: 'eyebrow' }, 'Recent'), h('ul', { class: 'recent-row', id: 'recent' }, ...recent.map((n) => noteCard(n, today, ' recent-card')))));
-        parts.push(mainGrid(today));
+        if (recent.length) {
+          const first = recent[0];
+          const excerpt = first.sections.map((s) => docToText(s.doc)).join(' ').replace(/\s+/g, ' ').slice(0, 180);
+          parts.push(h('section', { class: 'pilot-library', 'aria-label': 'Continue writing' },
+            h('a', { class: 'pilot-resume', href: `#/n/${first.id}` },
+              h('h2', {}, first.title || 'Untitled note'),
+              h('p', { class: 'meta' }, excerpt || 'Return to your last thought, and take it a little further.'),
+              h('span', { class: 'pilot-resume-foot' }, h('span', { class: 'meta' }, index.label(first)), h('span', { class: 'pilot-resume-link' }, 'Resume note', icon('arrow', 18)))),
+            h('a', { class: 'pilot-review', href: due.length ? '#/review' : '#/notes/due' },
+              h('span', { class: 'pilot-review-title' }, icon('today', 20), 'Review'), h('strong', { class: 'pilot-review-count' }, String(due.length)),
+              h('span', {}, due.length ? 'notes ready to revisit' : 'You are up to date'), h('span', { class: 'pilot-resume-link' }, due.length ? 'Start review' : 'View review schedule', icon('arrow', 18)))));
+          parts.push(h('section', { class: 'recent', 'aria-label': 'Recent notes' }, h('h2', {}, 'Recently opened'), h('ul', { class: 'recent-row', id: 'recent' }, ...recent.map((n) => noteCard(n, today, ' recent-card')))));
+        }
+        parts.push(h('header', { class: 'pilot-folder-heading' }, h('h2', {}, 'Your subjects'), h('p', { class: 'meta' }, `${plural(notes.length, 'note')} · Your folders, just as you organised them`)), mainGrid(today));
       }
     } else if (where.level === 'due') {
       for (const n of [...due].sort((a, b) => a.nextReview.localeCompare(b.nextReview))) listEl.append(noteCard(n, today));
@@ -392,13 +408,6 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     }
   }
 
-    /** Badge on a main subject's card: GS1, CA (Current affairs), ES (Essay). */
-  const shortLabel = (name: string) => {
-    if (name.length <= 3) return name;
-    const words = name.replace(/[^\p{L}\p{N} ]/gu, '').split(/\s+/).filter(Boolean);
-    return (words.length > 1 ? words.map((w) => w[0]).join('') : name).slice(0, 2).toUpperCase();
-  };
-
   function mainGrid(today: string) {
     const cards: CardSpec[] = index.roots('notes').map((m) => {
       const subs = index.children(m.id);
@@ -408,7 +417,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
         href: folderHref(m.id),
         name: m.name,
         colour: index.colour(m),
-        badge: shortLabel(m.name),
+        badge: icon('folder', 22),
         sub: subs.map((s) => s.name).join(', ') || 'No subjects yet',
         count: plural(list.length, 'note'),
         due: list.filter((n) => n.nextReview <= today).length,
@@ -796,9 +805,12 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     undoBtn.addEventListener('click', () => hist?.undo());
     redoBtn.addEventListener('click', () => hist?.redo());
     const outlineBtn = h('button', { type: 'button', class: 'icon-btn head-outline', id: 'outline-toggle', 'aria-label': 'Outline', title: 'Show or hide the outline' }, icon('sidebar', 22));
-    const paintOutlineBtn = () => outlineBtn.setAttribute('aria-pressed', String(outlineShown()));
+    const paintOutlineBtn = () => outlineBtn.setAttribute('aria-pressed', String(innerWidth < 1000 ? document.body.classList.contains('compact-outline-open') : outlineShown()));
     const toggleOutline = () => {
-      setOutlineShown(!outlineShown());
+      if (innerWidth < 1000) {
+        const on = document.body.classList.toggle('compact-outline-open');
+        setOutlineShown(on);
+      } else setOutlineShown(!outlineShown());
       paintOutlineBtn();
     };
     outlineBtn.addEventListener('click', toggleOutline);
@@ -1056,7 +1068,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     function toggleCollapse(id: string) {
       if (collapsed.has(id)) collapsed.delete(id);
       else collapsed.add(id);
-      const sec = sectionsHost.querySelector<HTMLElement>(`.note-section[data-section-id="${id}"]`);
+      const sec = sectionsHost.querySelector<HTMLElement>(`.note-section[data-section-id="${CSS.escape(id)}"]`);
       if (sec) {
         const isC = collapsed.has(id);
         sec.classList.toggle('collapsed', isC);
@@ -1126,7 +1138,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
 
     const jumpTo = (id: string) => {
       if (collapsed.has(id)) toggleCollapse(id);
-      const sec = sectionsHost.querySelector<HTMLElement>(`.note-section[data-section-id="${id}"]`);
+      const sec = sectionsHost.querySelector<HTMLElement>(`.note-section[data-section-id="${CSS.escape(id)}"]`);
       sec?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
       activeSection = id;
       paintActive();
@@ -1790,6 +1802,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     paintInsights();
     applyNoteFont();
     renderSections();
+    leaveWorkspace = mountWorkspace(d, canvasEl, ctx.go, jumpTo);
     if (!isNew) setSave('saved');
     requestAnimationFrame(growTitle);
     if (isNew) title.focus();
@@ -1815,6 +1828,7 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
     if (id && id !== 'new' && draft?.id === id) return; // already open (e.g. after the first save renamed the URL)
     // Take the old note off screen first, so nothing typed during the save lands in it.
     for (const ed of editors.values()) ed.setEditable(false, false); // false: no 'update' event, so leaving a note never re-saves it
+    leaveWorkspace?.(); leaveWorkspace = null;
     editorEl.replaceChildren();
     // Leaving a new note: its last save must not rename the address of the page we are going to.
     // (An untouched new note is never saved, so it is simply dropped.)
@@ -1876,7 +1890,9 @@ export function mountNotes(root: HTMLElement, ctx: AppContext): View {
           }
         }
       }
-      void open(parts[0] === 'n' && parts[1] ? parts[1] : null, parts[2]);
+      void open(parts[0] === 'n' && parts[1] ? parts[1] : null, parts[2]).then(() => {
+        if (parts[0] === 'n' && parts[2] === 'section' && parts[3]) requestAnimationFrame(() => requestAnimationFrame(() => jumpToSearchSection(parts[1], decodeURIComponent(parts[3]))));
+      });
     },
     async flush() {
       if (dirty) await save();
